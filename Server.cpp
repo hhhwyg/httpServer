@@ -45,8 +45,7 @@ void Server::handNewConn() {
   while ((accept_fd = accept(listenFd_, (struct sockaddr *)&client_addr,
                              &client_addr_len)) > 0) {
     EventLoop *loop = eventLoopThreadPool_->getNextLoop();
-    LOG << "New connection from " << inet_ntoa(client_addr.sin_addr) << ":"
-        << ntohs(client_addr.sin_port);
+    // LOG << "New connection from " << inet_ntoa(client_addr.sin_addr) << ":" << ntohs(client_addr.sin_port); // removed: fires per-connection, locks AsyncLogging mutex
     // cout << "new connection" << endl;
     // cout << inet_ntoa(client_addr.sin_addr) << endl;
     // cout << ntohs(client_addr.sin_port) << endl;

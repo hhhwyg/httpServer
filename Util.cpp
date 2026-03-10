@@ -61,7 +61,7 @@ ssize_t readn(int fd, std::string &inBuffer, bool &zero) {
     // printf("nread = %d\n", nread);
     readSum += nread;
     // buff += nread;
-    inBuffer += std::string(buff, buff + nread);
+    inBuffer.append(buff, nread);
     // printf("after inBuffer.size() = %d\n", inBuffer.size());
   }
   return readSum;
@@ -90,7 +90,7 @@ ssize_t readn(int fd, std::string &inBuffer) {
     // printf("nread = %d\n", nread);
     readSum += nread;
     // buff += nread;
-    inBuffer += std::string(buff, buff + nread);
+    inBuffer.append(buff, nread);
     // printf("after inBuffer.size() = %d\n", inBuffer.size());
   }
   return readSum;

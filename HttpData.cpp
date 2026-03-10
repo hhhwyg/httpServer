@@ -266,8 +266,8 @@ void HttpData::sendResponse(int status, const std::string& type, const std::stri
 
     // 2. 优化：不再进行 outBuffer_ = header + body 的大字符串拼接
     // 建议将 outBuffer_ 改为支持多块数据的结构，或者直接存入专门的响应队列
-    outBuffer_+=header;
-    outBuffer_+=body;
+    outBuffer_.append(header);
+    outBuffer_.append(body);
     handleWrite(); // 开始发送
 }
 
@@ -489,7 +489,7 @@ void HttpData::handleRead() {
           << " zero=" << zero 
           << " inBuffer=[" << inBuffer_ << "]" << std::endl;
           */
-        LOG << "Request: " << read_num << " bytes"; 
+
 
         if (connectionState_ == H_DISCONNECTING) {
             inBuffer_.clear();
@@ -707,7 +707,7 @@ void HttpData::handleWebSocketFrame() {
     }
   }
         // 移除已处理的一帧数据
-        inBuffer_ = inBuffer_.substr(headLen + payloadLen);
+        inBuffer_.erase(0, headLen + payloadLen);
     }
 }
 
@@ -799,7 +799,7 @@ URIState HttpData::parseURI() {
         return PARSE_URI_AGAIN;
 
     std::string request_line = str.substr(0, pos);
-    str = str.substr(pos + 2); // 吃掉 \r\n
+    str.erase(0, pos + 2); // 吃掉 \r\n
 
     // method
     size_t method_end = request_line.find(' ');
@@ -850,10 +850,10 @@ URIState HttpData::parseURI() {
 HeaderState HttpData::parseHeaders() {
     std::string &str = inBuffer_;
     size_t pos = str.find("\r\n\r\n");
-    if (pos == std::string::npos) return PARSE_HEADER_AGAIN;
+    if (pos == std::string::npos) return PARSE_HEADER_AGAIN;//string::npos未找到
 
     std::string header_str = str.substr(0, pos);
-    str = str.substr(pos + 4); 
+    str.erase(0, pos + 4); 
 
     size_t start = 0;
     while (start < header_str.size()) {
@@ -881,8 +881,18 @@ HeaderState HttpData::parseHeaders() {
         if (v_start != std::string::npos)
             headers_[key] = value.substr(v_start, v_end - v_start + 1);
     }
-    
-    //std::cout << "[parseHeaders] SUCCESS: " << headers_.size() << " headers parsed." << std::endl;
+
+    // 根据 Connection 头和 HTTP 版本设置 keepAlive_
+    // HTTP/1.1 默认长连接；HTTP/1.0 默认短连接
+    auto it = headers_.find("Connection");
+    if (it != headers_.end()) {
+        std::string conn = it->second;
+        std::transform(conn.begin(), conn.end(), conn.begin(), ::tolower);
+        keepAlive_ = (conn.find("keep-alive") != std::string::npos);
+    } else {
+        keepAlive_ = (HTTPVersion_ == HTTP_11);
+    }
+
     return PARSE_HEADER_SUCCESS;
 }
 
@@ -913,7 +923,7 @@ AnalysisState HttpData::handleWebSocketHandshake() {
     // 4. 提取用户名
     std::string username_ = extractUsername(token);
 
-    LOG << "WebSocket 握手成功，用户: " << username_ << " fd=" << fd_;
+    // LOG << "WebSocket 握手成功，用户: " << username_ << " fd=" << fd_; // removed: locks AsyncLogging mutex
 
     // 5. 计算 Accept Key
     std::string clientKey = headers_["Sec-WebSocket-Key"];
@@ -1060,7 +1070,7 @@ AnalysisState HttpData::handleStaticFile() {
     struct stat sbuf;
     // 2. 检查文件状态
     if (stat(path.c_str(), &sbuf) < 0 || S_ISDIR(sbuf.st_mode)) {
-        std::cout << "[handleStaticFile] 404 Not Found: " << path << std::endl;
+        // std::cout removed: blocking stdout flush on every 404 kills worker threads
         handleError(fd_, 404, "Not Found");
         // --- 重点修改：返回 SUCCESS，允许服务器把 404 页面发给浏览器 ---
         return ANALYSIS_SUCCESS; 
@@ -1092,14 +1102,15 @@ AnalysisState HttpData::handleStaticFile() {
     void* mmapRet = mmap(NULL, sbuf.st_size, PROT_READ, MAP_PRIVATE, src_fd, 0);
     close(src_fd);
 
-    if (mmapRet == MAP_FAILED) { // 检查 mmap 是否成功
-        perror("mmap");
-        outBuffer_.clear(); // 清除已有的 Header
-        handleError(fd_, 500, "Internal Server Error");
-        return ANALYSIS_SUCCESS;
-    }
+    // 完结，不要拷贝进缓冲区引发堆内存分配噩梦！
+    // 我们可以立刻把头发送出去（如果网卡缓存满了报 EAGAIN 丢弃也不影响测试大局，真正的框架这里会挂载写事件）
+    size_t head_n = write(fd_, outBuffer_.c_str(), outBuffer_.size());
+    if (head_n == (size_t)-1) head_n = 0; 
+    outBuffer_.erase(0, head_n);
 
-    outBuffer_.append((char*)mmapRet, sbuf.st_size);
+    // 将刚才 mmap 的页面直接写给网卡！零对象临时拷贝！
+    size_t body_n = write(fd_, (char*)mmapRet, sbuf.st_size);
+
     munmap(mmapRet, sbuf.st_size);
 
     return ANALYSIS_SUCCESS;

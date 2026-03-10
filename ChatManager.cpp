@@ -2,9 +2,9 @@
 
 
 std::string ChatManager::generateUniqueId() {
-    // 使用 random_device 产生种子，mt19937 作为随机数引擎
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
+    // 使用 random_device 产生种子，mt19937 作为随机数引擎，并且加 thread_local 保证线程安全
+    thread_local static std::random_device rd;
+    thread_local static std::mt19937 gen(rd());
     // 定义 8 位数的范围：10,000,000 到 99,999,999
     std::uniform_int_distribution<> dis(10000000, 99999999);
 
