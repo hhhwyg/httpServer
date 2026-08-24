@@ -13,6 +13,7 @@ set(HTTPSERVER_SANITIZER "" CACHE STRING
 set(HTTPSERVER_CORE_SOURCES
     src/IoUring.cpp
     src/Poller.cpp
+    src/config/ServerConfig.cpp
     src/base/AsyncLogging.cpp
     src/base/CountDownLatch.cpp
     src/base/FileUtil.cpp
@@ -52,6 +53,7 @@ set(HTTPSERVER_LEGACY_INCLUDE_DIRS
     ${PROJECT_SOURCE_DIR}/src/base
     ${PROJECT_SOURCE_DIR}/src/channel
     ${PROJECT_SOURCE_DIR}/src/chat
+    ${PROJECT_SOURCE_DIR}/src/config
     ${PROJECT_SOURCE_DIR}/src/epoll
     ${PROJECT_SOURCE_DIR}/src/eventloop
     ${PROJECT_SOURCE_DIR}/src/httpdata

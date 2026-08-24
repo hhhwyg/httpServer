@@ -178,11 +178,7 @@ ws://127.0.0.1:8088/ws?token=<JWT>
 
 ## MySQL 配置
 
-登录和注册代码依赖 MySQL 表 `user`，但 `src/Main.cpp` 中的连接池初始化调用目前被注释掉。启用账号功能前，需要：
-
-1. 创建数据库和用户表。
-2. 按实际环境修改 `src/Main.cpp` 中的 `SqlConnPool::Instance()->Init(...)`。
-3. 重新编译并启动服务器。
+登录和注册依赖 MySQL。数据库和 JWT 都通过环境变量配置，禁止在 `src/Main.cpp` 中写入真实口令或 secret；完整变量说明见 [配置](docs/Configuration.md)。未配置数据库时服务仍会启动，但认证路由返回 `503`。
 
 示例表结构：
 
@@ -197,12 +193,7 @@ CREATE TABLE user (
 );
 ```
 
-示例初始化调用：
-
-```cpp
-SqlConnPool::Instance()->Init(
-    "127.0.0.1", 3306, "root", "your-password", "webserver", 12);
-```
+密码列保存 scrypt hash，不保存明文。参见 [安全模型](docs/Security_Model.md) 中的旧测试账号迁移说明。
 
 ## 测试与示例
 
@@ -259,11 +250,10 @@ cmake --build build/debug --target LoggingStressTest --parallel
 ## 当前已知限制
 
 - 项目依赖 Linux 专有接口 `io_uring`、`epoll`、`eventfd` 和 `sendfile`，不能直接在原生 Windows 环境编译运行。
-- MySQL 连接池初始化仍是注释状态；未配置数据库时，登录和注册不能正常工作。
+- 未配置数据库或 JWT secret 时，认证功能会显式关闭；这适合静态文件开发，不可将其作为已配置认证运行。
 - 房间接口代码仍在联调中，`analysisRequest()` 使用的 `path_` 当前没有在 URI 解析流程中赋值，`/room/create` 和 `/room/list` 需要进一步修正路由匹配。
 - `wwwroot/index.html` 与后端当前 WebSocket JSON 字段存在不一致，前端发送的是 `user`/`msg`，后端解析的是 `roomId`/`content`，需要统一协议。
-- JWT 签名密钥目前硬编码为 `my_secret_key`，上线前必须改为外部配置并妥善保管。
-- 用户密码当前以明文写入数据库，生产环境应使用带盐密码哈希，并使用参数化 SQL 防止注入。
+- 数据库访问仍在 EventLoop 中同步执行；数据库慢查询会影响网络循环，后续需要移至独立执行器。
 - 静态文件路径、请求体大小、WebSocket 控制帧和异常处理仍需要更完整的安全边界与协议校验。
 - 日志文件轮转接口尚未实现，运行时应自行管理日志文件大小和保存周期。
 
@@ -277,6 +267,8 @@ cmake --build build/debug --target LoggingStressTest --parallel
 - [连接生命周期](docs/Connection_Lifecycle.md)
 - [io_uring I/O 设计](docs/IoUring_Design.md)
 - [可切换 Poller 与性能对比](docs/Poller_Backends.md)
+- [配置](docs/Configuration.md)
+- [安全模型](docs/Security_Model.md)
 
 ## 许可证
 

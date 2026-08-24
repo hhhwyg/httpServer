@@ -10,6 +10,8 @@
 namespace {
 
 short epollToPollEvents(__uint32_t epollEvents) {
+  // Channel 沿用 epoll 风格的兴趣事件；提交 IORING_OP_POLL_ADD 前必须
+  // 转换成 poll(2) 事件位。EPOLLET/EPOLLONESHOT 没有对应的 poll 位。
   short pollEvents = 0;
   if (epollEvents & EPOLLIN) pollEvents |= POLLIN;
   if (epollEvents & EPOLLOUT) pollEvents |= POLLOUT;
@@ -26,6 +28,8 @@ io_uring_sqe* getSqe(io_uring* ring) {
     return sqe;
   }
 
+  // SQ 满时先把已准备的 SQE 提交给内核，释放本地 SQ 空间；真正等待
+  // CQE 的工作仍由 EventLoop 随后的 processEvents() 统一完成。
   const int submitResult = io_uring_submit(ring);
   if (submitResult < 0) {
     LOG << "io_uring_submit failed: " << std::strerror(-submitResult);
@@ -69,6 +73,8 @@ void IoUring::submitPollAdd(const SP_Channel& request) {
     return;
   }
 
+  // poll 是一次性操作：它完成后必须由 Channel 回调重新设置兴趣事件，
+  // 再提交新的 poll。token 而非 fd 会作为 CQE 的唯一身份。
   const std::uint64_t token = operations_.track(UringOp::kPoll, fd, request);
   operations_.bindPoll(fd, token);
   io_uring_prep_poll_add(sqe, fd, epollToPollEvents(request->getEvents()));
@@ -103,6 +109,8 @@ void IoUring::epoll_add(SP_Channel request, int timeout) {
   request->EqualAndUpdateLastEvents();
   channels_[fd] = request;
   if (const std::shared_ptr<HttpData> holder = request->getHolder()) {
+    // Channel 的 holder 是 weak_ptr；注册期间 Poller 需要持有连接，
+    // 否则事件循环返回后 HttpData 可能提前析构。
     connectionOwners_[request.get()] = holder;
   }
 
@@ -124,6 +132,8 @@ void IoUring::epoll_mod(SP_Channel request, int timeout) {
     return;
   }
 
+  // io_uring 的 poll 不能原地修改。取消旧请求并登记新请求；旧 CQE
+  // 即使晚到，也会根据旧 token 被安全消费，不会影响新 poll。
   cancelPoll(request->getFd());
   submitPollAdd(request);
 }
@@ -134,6 +144,7 @@ void IoUring::epoll_del(SP_Channel request) {
   }
 
   const int fd = request->getFd();
+  // 先失活再取消：已经在内核中的 CQE 仍可能返回，但不会再驱动回调。
   request->deactivate();
   cancelPoll(fd);
   connectionOwners_.erase(request.get());
@@ -155,6 +166,7 @@ void IoUring::submitRead(SP_Channel request, void* buffer, size_t length) {
     return;
   }
 
+  // buffer 由 HttpData 的输入缓冲区提供，并在 isReading_ 为真期间保持有效。
   const std::uint64_t token =
       operations_.track(UringOp::kRead, request->getFd(), request);
   io_uring_prep_read(sqe, request->getFd(), buffer, length, 0);
@@ -172,6 +184,7 @@ void IoUring::submitWrite(SP_Channel request, const void* buffer, size_t length)
     return;
   }
 
+  // buffer 指向 HttpData 尚未 retrieve 的输出数据；完成前不能移动读指针。
   const std::uint64_t token =
       operations_.track(UringOp::kWrite, request->getFd(), request);
   io_uring_prep_write(sqe, request->getFd(), buffer, length, 0);
@@ -180,6 +193,7 @@ void IoUring::submitWrite(SP_Channel request, const void* buffer, size_t length)
 
 void IoUring::processEvents() {
   while (true) {
+    // 一次提交本轮累积的 poll/read/write SQE。这样多个连接可批量进入内核。
     const int submitResult = io_uring_submit(&ring_);
     if (submitResult < 0) {
       LOG << "io_uring_submit failed: " << std::strerror(-submitResult);
@@ -202,6 +216,8 @@ void IoUring::processEvents() {
       return;
     }
 
+    // 已经等到至少一个 CQE 后，把当前可见的 CQE 一次取出，减少
+    // EventLoop 在高并发下反复进入内核的次数。
     io_uring_cqe* cqes[kRingSize];
     const unsigned count = io_uring_peek_batch_cqe(&ring_, cqes, kRingSize);
     for (unsigned index = 0; index < count; ++index) {
@@ -211,18 +227,23 @@ void IoUring::processEvents() {
         continue;
       }
 
+      // take() 会移除登记记录，并把原始 Channel 的 shared_ptr 交给本轮
+      // 处理。后续即使 fd 已被复用，也不会按“当前 fd”错误路由。
       const auto operation = operations_.take(token);
       if (!operation.has_value()) {
         continue;
       }
 
       const SP_Channel& channel = operation->channel;
+      // 关闭流程会先让 Channel 失活。旧 read/write/poll CQE 到达时只释放
+      // 操作记录，不再进入 HttpData 回调。
       if (!channel || !channel->isActive() ||
           channel->getFd() != operation->fd) {
         continue;
       }
 
       if (operation->type == UringOp::kPoll) {
+        // 当前 poll 已完成，允许随后 updatePoller() 为该 Channel 重新注册。
         channel->markPollConsumed();
         if (result == -ECANCELED) {
           continue;
@@ -242,6 +263,8 @@ void IoUring::processEvents() {
       }
     }
 
+    // 所有 CQE 都处理完后才归还给内核。提前 advance 会使 cqes 数组中的
+    // 指针失效。
     io_uring_cq_advance(&ring_, count);
     if (count > 0) {
       return;

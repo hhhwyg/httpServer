@@ -148,6 +148,8 @@ cmake/                    # CMake 辅助模块
 
 ### Phase 3：安全、配置与数据访问
 
+**状态：核心安全基线已完成，数据库集成验收待补。** 已移除硬编码 JWT secret 和演示数据库口令，新增环境变量配置、JWT issuer/签发/过期校验、scrypt 密码 hash、MySQL prepared statements、连接池初始化失败处理，以及对应的配置与加密单测。真实 MySQL 容器集成测试、限流和将阻塞数据库 I/O 移出 EventLoop 仍是本阶段后续工作。
+
 **目标：** 将演示代码改为不会以明文凭据、SQL 拼接或硬编码密钥运行的服务。
 
 - 增加 `Config` 模块，支持配置文件和环境变量覆盖；提供 `.env.example`/`config.example.toml`，绝不提交真实密码、JWT 密钥或私钥。

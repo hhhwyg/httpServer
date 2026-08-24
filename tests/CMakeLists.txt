@@ -20,6 +20,21 @@ target_link_libraries(PollerBackendTest PRIVATE httpserver::core)
 add_test(NAME base.poller_backend COMMAND PollerBackendTest)
 set_tests_properties(base.poller_backend PROPERTIES LABELS "unit;poller")
 
+add_executable(CryptoUtilTest util/CryptoUtilTest.cpp)
+target_include_directories(CryptoUtilTest PRIVATE
+    ${PROJECT_SOURCE_DIR}/src
+    ${HTTPSERVER_LEGACY_INCLUDE_DIRS}
+)
+target_link_libraries(CryptoUtilTest PRIVATE httpserver::core)
+add_test(NAME util.crypto COMMAND CryptoUtilTest)
+set_tests_properties(util.crypto PROPERTIES LABELS "unit;security")
+
+add_executable(ServerConfigTest config/ServerConfigTest.cpp)
+target_include_directories(ServerConfigTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_link_libraries(ServerConfigTest PRIVATE httpserver::core)
+add_test(NAME config.server COMMAND ServerConfigTest)
+set_tests_properties(config.server PROPERTIES LABELS "unit;config;security")
+
 add_executable(HttpDataLifecycleTest httpdata/HttpDataLifecycleTest.cpp)
 target_include_directories(HttpDataLifecycleTest PRIVATE
     ${PROJECT_SOURCE_DIR}/src

@@ -659,15 +659,13 @@ AnalysisState HttpData::handleWebSocketHandshake() {
 
     // 3. JWT 鉴权（从 URL query 中取 token）
     std::string token = getQueryParam("token");
-    if (token.empty() || !CryptoUtil::verifyJWT(token)) {
+    const auto username = CryptoUtil::verifyAndExtractUsername(token);
+    if (!username.has_value()) {
         handleError(fd_, 401, "Unauthorized");
         return ANALYSIS_ERROR;
     }
 
-    // 4. 提取用户名
-    std::string username_ = CryptoUtil::extractUsername(token);
-
-    // LOG << "WebSocket 握手成功，用户: " << username_ << " fd=" << fd_; // removed: locks AsyncLogging mutex
+    // The verified subject is available in *username for future session binding.
 
     // 5. 计算 Accept Key
     std::string clientKey = headers_["Sec-WebSocket-Key"];
