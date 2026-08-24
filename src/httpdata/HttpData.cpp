@@ -1,5 +1,3 @@
-// @Author Lin Ya
-// @Email xxbbb@vip.qq.com
 #include <vector>
 #include <algorithm>
 #include <fcntl.h>
@@ -157,6 +155,8 @@ HttpData::HttpData(EventLoop *loop, int connfd)
       error_(false),
       closed_(false),
       connectionState_(H_CONNECTED),
+      headerSendIdx_(0),
+      bodySendIdx_(0),
       method_(METHOD_GET),
       HTTPVersion_(HTTP_11),
       nowReadPos_(0),
@@ -826,6 +826,10 @@ void HttpData::handleClose() {
         }
     }
     rooms_.clear(); // 彻底断开与所有房间的联系
+  if (fd_ >= 0) {
+    close(fd_);
+    fd_ = -1;
+  }
 }
 
 void HttpData::newEvent() {
