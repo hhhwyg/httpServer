@@ -15,7 +15,7 @@ using namespace std;
   //  : loop_(loop), events_(0), lastEvents_(0), fd_(0) {}
 
 Channel::Channel(EventLoop *loop, int fd)
-    : loop_(loop), fd_(fd), events_(0), lastEvents_(0) {}
+    : loop_(loop), fd_(fd), events_(0), revents_(0), lastEvents_(0), active_(false) {}
 
 Channel::~Channel() {
   // loop_->poller_->epoll_del(fd, events_);
@@ -26,31 +26,31 @@ int Channel::getFd() { return fd_; }
 void Channel::setFd(int fd) { fd_ = fd; }
 
 void Channel::handleRead() {
-  if (readHandler_) {
+  if (active_ && readHandler_) {
     readHandler_();
   }
 }
 
 void Channel::handleWrite() {
-  if (writeHandler_) {
+  if (active_ && writeHandler_) {
     writeHandler_();
   }
 }
 
 void Channel::handleConn() {
-  if (connHandler_) {
+  if (active_ && connHandler_) {
     connHandler_();
   }
 }
 
 void Channel::handleReadComplete(int res) {
-  if (asyncReadHandler_) {
+  if (active_ && asyncReadHandler_) {
     asyncReadHandler_(res);
   }
 }
 
 void Channel::handleWriteComplete(int res) {
-  if (asyncWriteHandler_) {
+  if (active_ && asyncWriteHandler_) {
     asyncWriteHandler_(res);
   }
 }

@@ -172,12 +172,32 @@ HttpData::HttpData(EventLoop *loop, int connfd)
 
 
 void HttpData::init() {
-  auto self = shared_from_this();
-  channel_->setReadHandler(bind(&HttpData::handleRead, self));
-  channel_->setWriteHandler(bind(&HttpData::handleWrite, self));
-  channel_->setConnHandler(bind(&HttpData::handleConn, self));
-  channel_->setAsyncReadHandler(bind(&HttpData::handleReadComplete, self, std::placeholders::_1));
-  channel_->setAsyncWriteHandler(bind(&HttpData::handleWriteComplete, self, std::placeholders::_1));
+  const std::weak_ptr<HttpData> weakSelf = shared_from_this();
+  channel_->setReadHandler([weakSelf] {
+    if (const auto self = weakSelf.lock()) {
+      self->handleRead();
+    }
+  });
+  channel_->setWriteHandler([weakSelf] {
+    if (const auto self = weakSelf.lock()) {
+      self->handleWrite();
+    }
+  });
+  channel_->setConnHandler([weakSelf] {
+    if (const auto self = weakSelf.lock()) {
+      self->handleConn();
+    }
+  });
+  channel_->setAsyncReadHandler([weakSelf](int bytesRead) {
+    if (const auto self = weakSelf.lock()) {
+      self->handleReadComplete(bytesRead);
+    }
+  });
+  channel_->setAsyncWriteHandler([weakSelf](int bytesWritten) {
+    if (const auto self = weakSelf.lock()) {
+      self->handleWriteComplete(bytesWritten);
+    }
+  });
 }
 void HttpData::reset() {
   // inBuffer_.clear();
@@ -814,18 +834,28 @@ void HttpData::handleError(int fd, int err_num, string short_msg) {
 }
 
 void HttpData::handleClose() {
-  if(closed_) return;
-  closed_=true;
+  if (closed_) return;
+  closed_ = true;
   connectionState_ = H_DISCONNECTED;
-  shared_ptr<HttpData> guard(shared_from_this());
-  //通过定义一个局部变量 guard，人为地将该对象的引用计数 +1。只要 guard 还在这个函数的作用域内，对象就绝对不会被析构。
-  loop_->removeFromPoller(channel_);
-  for (const auto& [id, room] : rooms_) {
-        if (room) {
-            room->leave(fd_); 
-        }
+
+  // Keep the object alive while detaching the timer. TimerNode owns a shared
+  // pointer to HttpData and clearReq() can otherwise release the final owner.
+  const shared_ptr<HttpData> guard(shared_from_this());
+  if (channel_) {
+    if (loop_) {
+      loop_->removeFromPoller(channel_);
+    } else {
+      channel_->deactivate();
     }
-    rooms_.clear(); // 彻底断开与所有房间的联系
+    channel_->clearHolder();
+  }
+  seperateTimer();
+  for (const auto& [id, room] : rooms_) {
+    if (room) {
+      room->leave(fd_);
+    }
+  }
+  rooms_.clear();
   if (fd_ >= 0) {
     close(fd_);
     fd_ = -1;
@@ -833,12 +863,14 @@ void HttpData::handleClose() {
 }
 
 void HttpData::newEvent() {
+  if (closed_ || !channel_) return;
   channel_->setEvents(DEFAULT_EVENT);
   loop_->addToPoller(channel_, DEFAULT_EXPIRED_TIME);
   
 }
 
 void HttpData::submitAsyncRead() {
+    if (closed_ || connectionState_ == H_DISCONNECTED) return;
     char* buf = nullptr;
     int len = 0;
     inBuffer_.getWritableChunkInfo(&buf, &len);
@@ -848,7 +880,7 @@ void HttpData::submitAsyncRead() {
 }
 
 void HttpData::submitAsyncWrite() {
-    if (isWriting_) return;
+    if (closed_ || connectionState_ == H_DISCONNECTED || isWriting_) return;
     
     char* buf = nullptr;
     int len = 0;
@@ -870,6 +902,7 @@ void HttpData::submitAsyncWrite() {
 }
 
 void HttpData::handleReadComplete(int bytes_read) {
+    if (closed_ || connectionState_ == H_DISCONNECTED) return;
     if (connectionState_ == H_DISCONNECTING) {
         inBuffer_.clear();
         return;
@@ -965,6 +998,7 @@ void HttpData::handleReadComplete(int bytes_read) {
 }
 
 void HttpData::handleWriteComplete(int bytes_written) {
+    if (closed_ || connectionState_ == H_DISCONNECTED) return;
     isWriting_ = false;
     if (bytes_written < 0) {
         if (bytes_written == -EAGAIN || bytes_written == -EINTR) {

@@ -64,8 +64,8 @@ void Server::handNewConn() {
     // 设为非阻塞模式
     if (setSocketNonBlocking(accept_fd) < 0) {
       LOG << "Set non block failed!";
-      // perror("Set non block failed!");
-      return;
+      close(accept_fd);
+      continue;
     }
     //关闭Nagle 算法  如果你发送的数据包很小（比如只有几个字节的 HTTP 头），TCP 不会立刻把它发出去。它会攒着，直到攒够了一个 MSS（最大报文段大小，通常 1460 字节），或者等到了上一个包的确认（ACK）回来。
     setSocketNodelay(accept_fd);

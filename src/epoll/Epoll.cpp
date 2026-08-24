@@ -28,6 +28,7 @@ Epoll::~Epoll() {}
 // 注册新描述符
 void Epoll::epoll_add(SP_Channel request, int timeout) {
   int fd = request->getFd();
+  request->activate();
   if (timeout > 0) {
     add_timer(request, timeout);
     fd2http_[fd] = request->getHolder();
@@ -68,6 +69,7 @@ void Epoll::epoll_del(SP_Channel request) {
   //std::cout<< "epoll_del fd=" <<request->getFd()<<std::endl;
 
   int fd = request->getFd();
+  request->deactivate();
   struct epoll_event event;
   memset(&event, 0, sizeof(event));
   event.data.fd = fd;

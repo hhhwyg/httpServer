@@ -273,6 +273,8 @@ cmake --build build/debug --target LoggingStressTest --parallel
 - [构建与测试](docs/Build_and_Test.md)
 - [开发指南](docs/Development_Guide.md)
 - [持续集成](docs/CI.md)
+- [连接生命周期](docs/Connection_Lifecycle.md)
+- [io_uring I/O 设计](docs/IoUring_Design.md)
 
 ## 许可证
 

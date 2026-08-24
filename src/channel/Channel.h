@@ -19,6 +19,7 @@ class Channel {
   __uint32_t events_;//关注的事
   __uint32_t revents_;//实际发生的事
   __uint32_t lastEvents_;//上一个同步给内核关注的事件
+  bool active_;
 
   // 方便找到上层持有该Channel的对象
   std::weak_ptr<HttpData> holder_;
@@ -46,6 +47,7 @@ class Channel {
   void setFd(int fd);
 
   void setHolder(std::shared_ptr<HttpData> holder) { holder_ = holder; }
+  void clearHolder() { holder_.reset(); }
   std::shared_ptr<HttpData> getHolder() {
     std::shared_ptr<HttpData> ret(holder_.lock());
     return ret;
@@ -94,6 +96,16 @@ class Channel {
   void update();
 
   void setRevents(__uint32_t ev) { revents_ = ev; }
+
+  void activate() { active_ = true; }
+  void deactivate() {
+    active_ = false;
+    events_ = 0;
+    revents_ = 0;
+    lastEvents_ = 0;
+  }
+  bool isActive() const { return active_; }
+  void markPollConsumed() { lastEvents_ = 0; }
 
   void setEvents(__uint32_t ev) { events_ = ev; }
   __uint32_t &getEvents() { return events_; }
