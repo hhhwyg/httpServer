@@ -1,5 +1,5 @@
 #include "UserController.h"
-#include "../json.hpp"
+#include "json.hpp"
 #include "SqlConnPool.h"
 #include "../util/CryptoUtil.h"
 

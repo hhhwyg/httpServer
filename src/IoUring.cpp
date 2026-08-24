@@ -232,3 +232,7 @@ void IoUring::add_timer(SP_Channel request_data, int timeout) {
   else
     LOG << "timer add fail";
 }
+
+void IoUring::handleExpired() {
+  timerManager_.handleExpiredEvent();
+}

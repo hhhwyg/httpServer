@@ -91,6 +91,8 @@ cmake/                    # CMake 辅助模块
 
 ### Phase 0：冻结基线与工程脚手架
 
+**状态：已完成。** Debug 与 ASan/UBSan 构建均已在 WSL Ubuntu 中通过，`base.object_pool` CTest 在两套构建下均通过。存量编译告警已记录，暂不启用 `-Werror`，留待 Phase 4 以独立改动清理。
+
 **目标：** 让任何人都能在同一环境复现当前行为和后续变化。
 
 - 建立 `.gitignore`，忽略 `build/`、日志、覆盖率、编译数据库和本地密钥文件；保留必要的示例配置。

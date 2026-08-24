@@ -1,5 +1,5 @@
 #include "RoomController.h"
-#include "../json.hpp"
+#include "json.hpp"
 #include "ChatManager.h"
 #include "ChatRoom.h"
 

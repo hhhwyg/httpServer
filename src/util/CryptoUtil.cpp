@@ -5,7 +5,7 @@
 #include <openssl/hmac.h>
 #include <openssl/buffer.h>
 #include <algorithm>
-#include "../json.hpp" // Note: adjust path if necessary, assuming it's in WebServer/
+#include "json.hpp"
 
 using json = nlohmann::json;
 

@@ -61,6 +61,8 @@ sudo apt install -y build-essential cmake pkg-config liburing-dev libssl-dev def
 
 项目使用 CMake Presets，所有构建产物都位于 `build/`，不会污染源码目录：
 
+> 建议将仓库 clone 到 WSL 的 Linux 文件系统后构建，例如 `~/code/httpServer`。若源码位于 `/mnt/c`，请参阅 [构建与测试](docs/Build_and_Test.md) 中的临时构建方式。
+
 ```bash
 git clone https://github.com/hhhwyg/httpServer.git
 cd httpServer

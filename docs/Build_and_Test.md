@@ -4,6 +4,8 @@
 
 服务器依赖 Linux 的 `io_uring`、`epoll`、`eventfd` 和 `sendfile`，应在 Ubuntu 或其他 Linux 发行版中构建。Windows 上请通过 WSL2 使用项目，项目目录建议放在 Linux 文件系统（例如 `~/code/httpServer`）以获得更稳定的文件权限和 I/O 行为。
 
+不要把日常 Linux 构建目录放在 `/mnt/c/...`。它是 Windows 的 DrvFs 挂载，Git 锁文件和 CMake 的配置文件都可能因权限元数据限制而创建失败。完成一次 Git 提交后，应在 WSL 的 Linux 文件系统中重新 clone 项目；Windows 资源管理器可通过 `\\wsl.localhost\Ubuntu\home\<用户名>\...` 直接访问和编辑该目录。
+
 最低工具版本：CMake 3.21、支持 C++17 的 GCC/Clang、Ninja。Ubuntu 安装依赖：
 
 ```bash
@@ -21,6 +23,16 @@ cmake --preset debug
 cmake --build --preset debug --parallel
 ctest --preset debug
 ```
+
+若源码暂时仍在 `/mnt/c/...`，可将构建产物放在 WSL 临时目录：
+
+```bash
+cmake --preset debug -S . -B /tmp/httpserver-debug
+cmake --build /tmp/httpserver-debug --parallel
+ctest --test-dir /tmp/httpserver-debug --output-on-failure
+```
+
+`/tmp` 下的构建结果可能在重启后被清除，因此它只适合临时验证，不适合日常开发。
 
 可用预设：
 

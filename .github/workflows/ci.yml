@@ -34,5 +34,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
       - name: Check whitespace errors
         run: git diff --check HEAD^ HEAD
