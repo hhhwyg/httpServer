@@ -1,5 +1,3 @@
-// @Author Lin Ya
-// @Email xxbbb@vip.qq.com
 #pragma once
 #include <sys/epoll.h>
 #include <unistd.h>
@@ -64,18 +62,13 @@ enum HttpVersion { HTTP_10 = 1, HTTP_11 };
 class HttpData : public std::enable_shared_from_this<HttpData> {
  public:
   HttpData(EventLoop *loop, int connfd);
-  ~HttpData() { 
-    close(fd_); }
+  ~HttpData() {
+    if (fd_ >= 0) close(fd_);
+  }
   void reset();
   void seperateTimer();
   void linkTimer(std::shared_ptr<TimerNode> mtimer) {
     timer_ = mtimer;
-  }
-  // Added an init function for object pool recycling if needed, though init() exists.
-  void releaseForPool() {
-      reset();
-      inBuffer_.clear();
-      outBuffer_.clear();
   }
   std::shared_ptr<Channel> getChannel() { return channel_; }
   EventLoop *getLoop() { return loop_; }
