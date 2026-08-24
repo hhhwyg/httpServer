@@ -1,0 +1,40 @@
+# CMake and compiler output
+/build/
+/cmake-build-*/
+/CMakeCache.txt
+/CMakeFiles/
+/CTestTestfile.cmake
+/Testing/
+/compile_commands.json
+/*.o
+/*.obj
+/*.a
+/*.so
+/*.so.*
+/*.dylib
+/*.dll
+/*.exe
+
+# Runtime output
+/logs/*.log
+/*.log
+/*.pid
+/*.gcda
+/*.gcno
+/*.profraw
+/*.profdata
+/coverage/
+
+# Local configuration and credentials
+/.env
+/.env.*
+!/.env.example
+/config/local.*
+*.pem
+*.key
+
+# IDE and operating system files
+/.vscode/
+/.idea/
+.DS_Store
+Thumbs.db

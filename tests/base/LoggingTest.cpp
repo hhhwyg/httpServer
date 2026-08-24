@@ -1,5 +1,5 @@
-#include "../Logging.h"
-#include "../Thread.h"
+#include "base/Logging.h"
+#include "base/Thread.h"
 #include <string>
 #include <unistd.h>
 #include <vector>

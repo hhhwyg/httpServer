@@ -45,7 +45,7 @@ flowchart TD
 
 - Linux，建议 Ubuntu 22.04 或更新版本。
 - 支持 `io_uring` 的 Linux 内核以及 `liburing`。
-- CMake 3.10 或更新版本。
+- CMake 3.21 或更新版本。
 - GCC/Clang，C++17。
 - OpenSSL 开发库。
 - MySQL client 开发库。
@@ -59,30 +59,38 @@ sudo apt install -y build-essential cmake pkg-config liburing-dev libssl-dev def
 
 ## 编译
 
-项目使用 CMake，建议采用 out-of-source 构建：
+项目使用 CMake Presets，所有构建产物都位于 `build/`，不会污染源码目录：
 
 ```bash
 git clone https://github.com/hhhwyg/httpServer.git
 cd httpServer
 
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j"$(nproc)"
+cmake --preset release
+cmake --build --preset release --parallel
 ```
 
 编译成功后，可执行文件位于：
 
 ```text
-build/WebServer
+build/release/WebServer
 ```
 
-当前 `CMakeLists.txt` 默认只构建 `src` 中的服务器源码，`tests` 目录没有自动加入 CMake 测试目标。
+日常开发请使用 `debug` 预设并执行自动测试：
+
+```bash
+cmake --preset debug
+cmake --build --preset debug --parallel
+ctest --preset debug
+```
+
+完整的构建、Sanitizer 和可选示例说明见 [构建与测试](docs/Build_and_Test.md)。
 
 ## 启动服务器
 
 请从项目根目录启动，这样静态文件路径 `./wwwroot` 可以正确解析：
 
 ```bash
-./build/WebServer
+./build/release/WebServer
 ```
 
 默认参数：
@@ -200,9 +208,10 @@ SqlConnPool::Instance()->Init(
 `tests/HTTPClient.cpp` 是一个简单的 Socket 客户端示例，内部默认连接 `127.0.0.1:8888`。如需使用它，请让服务器监听 `8888`：
 
 ```bash
-g++ -std=c++17 tests/HTTPClient.cpp -o build/HTTPClient
-./build/WebServer -p 8888
-./build/HTTPClient
+cmake --preset debug -DHTTPSERVER_BUILD_EXAMPLES=ON
+cmake --build build/debug --target HTTPClient --parallel
+./build/debug/WebServer -p 8888
+./build/debug/HTTPClient
 ```
 
 ### 日志压力测试
@@ -210,13 +219,12 @@ g++ -std=c++17 tests/HTTPClient.cpp -o build/HTTPClient
 `tests/base/LoggingTest.cpp` 用于验证日志格式化、单线程写入和多线程写入：
 
 ```bash
-g++ -std=c++17 -Isrc -Isrc/base \
-    tests/base/LoggingTest.cpp src/base/*.cpp \
-    -pthread -o build/LoggingTest
-./build/LoggingTest
+cmake --preset debug -DHTTPSERVER_BUILD_MANUAL_TESTS=ON
+cmake --build build/debug --target LoggingStressTest --parallel
+./build/debug/tests/LoggingStressTest
 ```
 
-当前仓库没有配置 GoogleTest 或 CTest 测试目标，以上示例需要手动编译。
+`base.object_pool` 已接入 CTest。日志程序是高输出量压力测试，仍需手动执行；后续阶段会继续补充协议和连接生命周期的自动测试。
 
 ## 目录结构
 
@@ -259,7 +267,10 @@ g++ -std=c++17 -Isrc -Isrc/base \
 ## 相关文档
 
 - [日志系统设计](docs/Log的设计.txt)
-- [代码审查与重构计划](docs/Code_Review_And_Refactor_Plan.md)
+- [重构路线图](docs/Refactoring_Roadmap.md)
+- [构建与测试](docs/Build_and_Test.md)
+- [开发指南](docs/Development_Guide.md)
+- [持续集成](docs/CI.md)
 
 ## 许可证
 
