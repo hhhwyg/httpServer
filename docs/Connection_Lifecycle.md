@@ -8,13 +8,13 @@
 
 | 对象 | 创建方 | 强所有者 | 释放时机 |
 | --- | --- | --- | --- |
-| `HttpData` | `Server::handNewConn()` | `IoUring::connectionOwners_` | 连接从 Poller 删除后 |
+| `HttpData` | `Server::handNewConn()` | 当前 Poller 的 `connectionOwners_` | 连接从 Poller 删除后 |
 | `Channel` | `HttpData` 构造函数 | `HttpData` 与未完成的 `UringOperation` | `HttpData` 和旧 CQE 均释放后 |
 | 当前 poll | `IoUring::submitPollAdd()` | `UringOperationRegistry` | 收到 poll/CANCELLED CQE 后 |
 | 异步 read/write | `submitRead()` / `submitWrite()` | `UringOperationRegistry` | 收到对应 CQE 后 |
 | `TimerNode` | `TimerManager` | 定时器队列 | 超时或 `HttpData::seperateTimer()` 后 |
 
-`Channel::holder_` 和 Channel 回调均使用 `weak_ptr<HttpData>`。这样不会形成 `HttpData -> Channel -> callback -> HttpData` 的引用环。Poller 的 `connectionOwners_` 是连接处于注册状态时唯一明确的强所有者；它按 `Channel*` 而不是 fd 索引，避免 fd 复用影响所有权。
+`Channel::holder_` 和 Channel 回调均使用 `weak_ptr<HttpData>`。这样不会形成 `HttpData -> Channel -> callback -> HttpData` 的引用环。Poller 的 `connectionOwners_` 是连接处于注册状态时唯一明确的强所有者；它按 `Channel*` 而不是 fd 索引，避免 fd 复用影响所有权。该规则同时适用于 `IoUring` 和 `Epoll` 后端。
 
 ## 状态与关闭顺序
 
@@ -55,6 +55,7 @@ ctest --preset asan
 测试覆盖：
 
 - `base.uring_operation_registry`：旧 poll token 到达时不能删除同 fd 的新 poll token。
+- `base.poller_backend`：命令行后端值只解析为 `io_uring` 或 `epoll`。
 - `httpdata.lifecycle`：弱回调不会形成对象环；关闭会释放 fd；重复关闭安全。
 - `base.object_pool`：缓存内存重新构造对象，不复用旧连接状态。
 

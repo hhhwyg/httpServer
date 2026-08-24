@@ -7,7 +7,7 @@
 ## 功能特性
 
 - 基于 TCP Socket 的 HTTP/1.0、HTTP/1.1 请求处理。
-- 基于 `io_uring` 的事件分发和异步读写。
+- 可切换 `io_uring` / `epoll` 的事件后端，支持公平的端到端基准对比。
 - 主事件循环 + 工作线程事件循环池的并发模型。
 - HTTP 请求行、请求头和请求体的状态机解析。
 - `wwwroot` 静态文件服务和 MIME 类型识别。
@@ -27,7 +27,7 @@ flowchart TD
     Server --> Pool[EventLoopThreadPool]
     Server --> MainLoop[主 EventLoop]
     Pool --> WorkerLoop[工作 EventLoop]
-    MainLoop --> Poller[IoUring]
+    MainLoop --> Poller[Poller: IoUring / Epoll]
     WorkerLoop --> Poller
     Poller --> Channel[Channel]
     Channel --> HttpData[HttpData]
@@ -102,11 +102,12 @@ ctest --preset debug
 | `-t` | `6` | 工作线程数量 |
 | `-p` | `8088` | 监听端口 |
 | `-l` | `./WebServer.log` | 日志文件路径；使用 `-l` 时应传入绝对路径 |
+| `-b` | `uring` | I/O 后端：`uring`（或 `io_uring`）/ `epoll` |
 
 示例：
 
 ```bash
-./build/WebServer -t 4 -p 8088 -l /tmp/httpServer.log
+./build/release/WebServer -b epoll -t 4 -p 8088 -l /tmp/httpServer.log
 ```
 
 打开静态首页：
@@ -226,7 +227,7 @@ cmake --build build/debug --target LoggingStressTest --parallel
 ./build/debug/tests/LoggingStressTest
 ```
 
-`base.object_pool` 已接入 CTest。日志程序是高输出量压力测试，仍需手动执行；后续阶段会继续补充协议和连接生命周期的自动测试。
+`base.object_pool`、`base.uring_operation_registry`、`base.poller_backend` 和 `httpdata.lifecycle` 已接入 CTest。日志程序是高输出量压力测试，仍需手动执行；后续阶段会继续补充协议和连接生命周期的自动测试。
 
 ## 目录结构
 
@@ -275,6 +276,7 @@ cmake --build build/debug --target LoggingStressTest --parallel
 - [持续集成](docs/CI.md)
 - [连接生命周期](docs/Connection_Lifecycle.md)
 - [io_uring I/O 设计](docs/IoUring_Design.md)
+- [可切换 Poller 与性能对比](docs/Poller_Backends.md)
 
 ## 许可证
 

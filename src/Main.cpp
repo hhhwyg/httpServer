@@ -9,10 +9,11 @@ int main(int argc, char* argv[]) {
   int threadNum = 6;
   int port = 8088;
   std::string logPath = "./WebServer.log";
+  PollerBackend backend = PollerBackend::kIoUring;
 
   // parse args
   int opt;
-  const char* str = "t:l:p:";
+  const char* str = "t:l:p:b:";
   while ((opt = getopt(argc, argv, str)) != -1) {
     switch (opt) {
       case 't': {
@@ -31,6 +32,15 @@ int main(int argc, char* argv[]) {
         port = atoi(optarg);
         break;
       }
+      case 'b': {
+        const auto parsedBackend = ParsePollerBackend(optarg);
+        if (!parsedBackend.has_value()) {
+          printf("backend must be epoll or uring\\n");
+          return 1;
+        }
+        backend = *parsedBackend;
+        break;
+      }
       default:
         break;
     }
@@ -41,8 +51,9 @@ int main(int argc, char* argv[]) {
   LOG << "_PTHREADS is not defined !";
 #endif
  //SqlConnPool::Instance()->Init("localhost", 3306, "root", "123456", "webserver", 12);
-  EventLoop mainLoop;  // 主线程  只负责接收socket连接
-  Server myHTTPServer(&mainLoop, threadNum, port);
+  LOG << "Starting server with " << PollerBackendName(backend) << " backend";
+  EventLoop mainLoop(backend);  // 主线程只负责接收 socket 连接
+  Server myHTTPServer(&mainLoop, threadNum, port, backend);
   myHTTPServer.start();
   mainLoop.loop();
   return 0;

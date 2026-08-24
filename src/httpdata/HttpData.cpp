@@ -163,6 +163,7 @@ HttpData::HttpData(EventLoop *loop, int connfd)
       state_(STATE_PARSE_URI),
       hState_(H_START),
       keepAlive_(false),
+      isReading_(false),
       isWriting_(false) {
   // loop_->queueInLoop(bind(&HttpData::setHandlers, this));
   //channel_->setReadHandler(bind(&HttpData::handleRead, this));
@@ -870,11 +871,12 @@ void HttpData::newEvent() {
 }
 
 void HttpData::submitAsyncRead() {
-    if (closed_ || connectionState_ == H_DISCONNECTED) return;
+    if (closed_ || connectionState_ == H_DISCONNECTED || isReading_) return;
     char* buf = nullptr;
     int len = 0;
     inBuffer_.getWritableChunkInfo(&buf, &len);
     if (buf && len > 0) {
+        isReading_ = true;
         loop_->submitRead(channel_, buf, len);
     }
 }
@@ -903,13 +905,19 @@ void HttpData::submitAsyncWrite() {
 
 void HttpData::handleReadComplete(int bytes_read) {
     if (closed_ || connectionState_ == H_DISCONNECTED) return;
+    isReading_ = false;
     if (connectionState_ == H_DISCONNECTING) {
         inBuffer_.clear();
         return;
     }
 
     if (bytes_read < 0) {
-        if (bytes_read == -EAGAIN || bytes_read == -EINTR) {
+        if (bytes_read == -EAGAIN) {
+             channel_->getEvents() |= (EPOLLIN | EPOLLET);
+             loop_->updatePoller(channel_);
+             return;
+        }
+        if (bytes_read == -EINTR) {
              submitAsyncRead();
              return;
         }
@@ -1001,7 +1009,12 @@ void HttpData::handleWriteComplete(int bytes_written) {
     if (closed_ || connectionState_ == H_DISCONNECTED) return;
     isWriting_ = false;
     if (bytes_written < 0) {
-        if (bytes_written == -EAGAIN || bytes_written == -EINTR) {
+        if (bytes_written == -EAGAIN) {
+             channel_->getEvents() |= (EPOLLOUT | EPOLLET);
+             loop_->updatePoller(channel_);
+             return;
+        }
+        if (bytes_written == -EINTR) {
              submitAsyncWrite();
              return;
         }

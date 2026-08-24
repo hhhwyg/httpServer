@@ -1,8 +1,9 @@
 #include "EventLoopThread.h"
 #include <functional>
 
-EventLoopThread::EventLoopThread()
+EventLoopThread::EventLoopThread(PollerBackend backend)
     : loop_(NULL),
+      backend_(backend),
       exiting_(false),
       thread_(bind(&EventLoopThread::threadFunc, this), "EventLoopThread"),
       mutex_(),
@@ -28,7 +29,7 @@ EventLoop* EventLoopThread::startLoop() {
 }
 
 void EventLoopThread::threadFunc() {
-  EventLoop loop;
+  EventLoop loop(backend_);
 
   {
     MutexLockGuard lock(mutex_);

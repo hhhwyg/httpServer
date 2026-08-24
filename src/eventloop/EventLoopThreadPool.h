@@ -8,7 +8,7 @@
 
 class EventLoopThreadPool : noncopyable {
  public:
-  EventLoopThreadPool(EventLoop* baseLoop, int numThreads);
+  EventLoopThreadPool(EventLoop* baseLoop, int numThreads, PollerBackend backend);
 
   ~EventLoopThreadPool() { LOG << "~EventLoopThreadPool()"; }
   void start();
@@ -20,6 +20,7 @@ class EventLoopThreadPool : noncopyable {
   bool started_;
   int numThreads_;
   int next_;
+  PollerBackend backend_;
   std::vector<std::shared_ptr<EventLoopThread>> threads_;
   std::vector<EventLoop*> loops_;
 };

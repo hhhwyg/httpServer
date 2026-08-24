@@ -12,6 +12,7 @@ set(HTTPSERVER_SANITIZER "" CACHE STRING
 
 set(HTTPSERVER_CORE_SOURCES
     src/IoUring.cpp
+    src/Poller.cpp
     src/base/AsyncLogging.cpp
     src/base/CountDownLatch.cpp
     src/base/FileUtil.cpp

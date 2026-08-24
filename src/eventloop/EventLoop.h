@@ -3,7 +3,7 @@
 #include <memory>
 #include <vector>
 #include "Channel.h"
-#include "IoUring.h"
+#include "Poller.h"
 #include "Util.h"
 #include "base/CurrentThread.h"
 #include "base/Logging.h"
@@ -16,7 +16,7 @@ using namespace std;
 class EventLoop {
  public:
   typedef std::function<void()> Functor;
-  EventLoop();
+  explicit EventLoop(PollerBackend backend = PollerBackend::kIoUring);
   ~EventLoop();
   void loop();
   void quit();
@@ -45,7 +45,7 @@ class EventLoop {
  private:
   // 声明顺序 wakeupFd_ > pwakeupChannel_
   bool looping_;
-  shared_ptr<IoUring> poller_;
+  std::unique_ptr<Poller> poller_;
   int wakeupFd_;
   bool quit_;
   bool eventHandling_;

@@ -8,10 +8,10 @@
 #include "base/ObjectPool.h"
 #include "HttpData.h"
 
-Server::Server(EventLoop *loop, int threadNum, int port)
+Server::Server(EventLoop *loop, int threadNum, int port, PollerBackend backend)
     : loop_(loop),
       threadNum_(threadNum),
-      eventLoopThreadPool_(new EventLoopThreadPool(loop_, threadNum)),
+      eventLoopThreadPool_(new EventLoopThreadPool(loop_, threadNum, backend)),
       started_(false),
       acceptChannel_(new Channel(loop,0)),
       port_(port),

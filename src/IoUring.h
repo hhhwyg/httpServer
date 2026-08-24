@@ -3,27 +3,29 @@
 #include <liburing.h>
 #include <memory>
 #include <unordered_map>
-#include "Channel.h"
 #include "IoUringOperation.h"
+#include "Poller.h"
 #include "Timer.h"
 
-class IoUring {
+class IoUring : public Poller {
  public:
   IoUring();
-  ~IoUring();
+  ~IoUring() override;
 
   // 与 Epoll 完全相同的接口
-  void epoll_add(SP_Channel request, int timeout);
-  void epoll_mod(SP_Channel request, int timeout);
-  void epoll_del(SP_Channel request);
+  void epoll_add(SP_Channel request, int timeout) override;
+  void epoll_mod(SP_Channel request, int timeout) override;
+  void epoll_del(SP_Channel request) override;
   // 真正的异步 I/O 接口
-  void submitRead(std::shared_ptr<Channel> request, void* buffer, size_t len);
-  void submitWrite(std::shared_ptr<Channel> request, const void* buffer, size_t len);
+  void submitRead(SP_Channel request, void* buffer, std::size_t len) override;
+  void submitWrite(SP_Channel request, const void* buffer,
+                   std::size_t len) override;
 
-  void processEvents();
+  void processEvents() override;
 
   void add_timer(std::shared_ptr<Channel> request_data, int timeout);
-  void handleExpired();
+  void handleExpired() override;
+  const char* name() const override { return "io_uring"; }
 
  private:
   // io_uring poll 事件 → epoll 事件的转换

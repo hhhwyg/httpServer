@@ -34,4 +34,4 @@ poll CQE 表示一次性 poll 已完成，`Channel::markPollConsumed()` 会使�
 
 `epoll_del()` 先使 Channel inactive，再取消当前 poll，并删除 Poller 中的 Channel 与 `HttpData` 所有权。已提交的 read/write 没有向新的 fd 重新路由：它们继续持有旧 Channel，完成后因 inactive 被丢弃并释放。
 
-当前实现每个连接应保持一个活跃 poll；写操作由 `HttpData::isWriting_` 防止并发重复提交。后续将增加读操作在途标志、显式 `IORING_OP_ASYNC_CANCEL` 覆盖和长稳压测。
+当前实现每个连接应保持一个活跃 poll；读写操作分别由 `HttpData::isReading_`、`HttpData::isWriting_` 防止并发重复提交。read 收到 `-EAGAIN` 时重新注册 `EPOLLIN`，write 收到 `-EAGAIN` 时重新注册 `EPOLLOUT`；显式 `IORING_OP_ASYNC_CANCEL` 覆盖和长稳压测仍是后续工作。

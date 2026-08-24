@@ -3,29 +3,33 @@
 #include <memory>
 #include <unordered_map>
 #include <vector>
-#include "Channel.h"
+#include "Poller.h"
 #include "HttpData.h"
 #include "Timer.h"
 
 
-class Epoll {
+class Epoll : public Poller {
  public:
   Epoll();
-  ~Epoll();
-  void epoll_add(SP_Channel request, int timeout);
-  void epoll_mod(SP_Channel request, int timeout);
-  void epoll_del(SP_Channel request);
+  ~Epoll() override;
+  void epoll_add(SP_Channel request, int timeout) override;
+  void epoll_mod(SP_Channel request, int timeout) override;
+  void epoll_del(SP_Channel request) override;
+  void submitRead(SP_Channel request, void* buffer, std::size_t length) override;
+  void submitWrite(SP_Channel request, const void* buffer,
+                   std::size_t length) override;
+  void processEvents() override;
   std::vector<std::shared_ptr<Channel>> poll();
   std::vector<std::shared_ptr<Channel>> getEventsRequest(int events_num);
   void add_timer(std::shared_ptr<Channel> request_data, int timeout);
   int getEpollFd() { return epollFd_; }
-  void handleExpired();
+  void handleExpired() override;
+  const char* name() const override { return "epoll"; }
 
  private:
-  static const int MAXFDS = 100000;
   int epollFd_;
   std::vector<epoll_event> events_;
-  std::shared_ptr<Channel> fd2chan_[MAXFDS];
-  std::shared_ptr<HttpData> fd2http_[MAXFDS];
+  std::unordered_map<Channel*, SP_Channel> channels_;
+  std::unordered_map<Channel*, std::shared_ptr<HttpData>> connectionOwners_;
   TimerManager timerManager_;
 };

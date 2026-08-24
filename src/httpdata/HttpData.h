@@ -116,6 +116,7 @@ class HttpData : public std::enable_shared_from_this<HttpData> {
   void handleWriteComplete(int bytes_written);
   void submitAsyncRead();
   void submitAsyncWrite();
+  bool isReading_;
   bool isWriting_;
   void handleWrite();
   void handleConn();

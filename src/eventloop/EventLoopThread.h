@@ -8,13 +8,14 @@
 
 class EventLoopThread : noncopyable {
  public:
-  EventLoopThread();
+  explicit EventLoopThread(PollerBackend backend);
   ~EventLoopThread();
   EventLoop* startLoop();
 
  private:
   void threadFunc();
   EventLoop* loop_;
+  PollerBackend backend_;
   bool exiting_;
   Thread thread_;
   MutexLock mutex_;

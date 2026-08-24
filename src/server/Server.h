@@ -6,7 +6,7 @@
 
 class Server {
  public:
-  Server(EventLoop *loop, int threadNum, int port);
+  Server(EventLoop *loop, int threadNum, int port, PollerBackend backend);
   ~Server() {}
   EventLoop *getLoop() const { return loop_; }
   void start();
