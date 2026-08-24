@@ -1,10 +1,15 @@
 #include <vector>
 #include <algorithm>
+#include <cctype>
+#include <cstdint>
+#include <filesystem>
 #include <fcntl.h>
+#include <fstream>
+#include <limits>
+#include <optional>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/uio.h>
-#include <sys/sendfile.h>
 #include <iostream>
 #include <openssl/sha.h>
 #include <openssl/bio.h>
@@ -32,6 +37,80 @@ using json = nlohmann::json;
 const __uint32_t DEFAULT_EVENT = EPOLLIN | EPOLLET | EPOLLONESHOT;
 const int DEFAULT_EXPIRED_TIME = 2000;              // ms
 const int DEFAULT_KEEP_ALIVE_TIME = 5 * 60 * 1000;  // ms
+constexpr std::size_t kMaxRequestLineBytes = 8192;
+constexpr std::size_t kMaxHeaderBytes = 16384;
+constexpr std::size_t kMaxHeaderCount = 100;
+constexpr std::size_t kMaxBodyBytes = 1024 * 1024;
+constexpr std::size_t kMaxWebSocketPayloadBytes = 1024 * 1024;
+constexpr std::size_t kMaxStaticFileBytes = 8 * 1024 * 1024;
+
+namespace {
+
+std::string toLower(std::string value) {
+  std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
+  return value;
+}
+
+std::optional<std::size_t> parseUnsignedSize(const std::string& value,
+                                             std::size_t maximum) {
+  if (value.empty()) return std::nullopt;
+  std::size_t result = 0;
+  for (const unsigned char c : value) {
+    if (!std::isdigit(c) || result > (maximum - (c - '0')) / 10) {
+      return std::nullopt;
+    }
+    result = result * 10 + (c - '0');
+  }
+  return result <= maximum ? std::optional<std::size_t>(result) : std::nullopt;
+}
+
+bool hasPathTraversal(const std::string& path) {
+  if (path.empty() || path.front() != '/' || path.find('\\') != std::string::npos ||
+      path.find('\0') != std::string::npos) {
+    return true;
+  }
+  std::size_t begin = 1;
+  while (begin <= path.size()) {
+    const std::size_t end = path.find('/', begin);
+    const std::string segment = path.substr(begin, end - begin);
+    if (segment == "..") return true;
+    if (end == std::string::npos) break;
+    begin = end + 1;
+  }
+  return false;
+}
+
+std::string webSocketFrame(unsigned char opcode, const std::string& payload) {
+  std::string frame;
+  frame.push_back(static_cast<char>(0x80 | opcode));
+  if (payload.size() <= 125) {
+    frame.push_back(static_cast<char>(payload.size()));
+  } else if (payload.size() <= std::numeric_limits<std::uint16_t>::max()) {
+    frame.push_back(126);
+    frame.push_back(static_cast<char>((payload.size() >> 8) & 0xff));
+    frame.push_back(static_cast<char>(payload.size() & 0xff));
+  } else {
+    return {};
+  }
+  frame.append(payload);
+  return frame;
+}
+
+bool isWithinDirectory(const std::filesystem::path& root,
+                       const std::filesystem::path& candidate) {
+  auto rootPart = root.begin();
+  auto candidatePart = candidate.begin();
+  while (rootPart != root.end() && candidatePart != candidate.end()) {
+    if (*rootPart != *candidatePart) return false;
+    ++rootPart;
+    ++candidatePart;
+  }
+  return rootPart == root.end();
+}
+
+}  // namespace
 
 
 char favicon[555] = {
@@ -103,7 +182,11 @@ void HttpData::sendResponse(int status, const std::string& type, const std::stri
     std::string header;
     header.reserve(256); 
     
-    header += "HTTP/1.1 " + std::to_string(status) + " OK\r\n";
+    const char* reason = status == 200 ? "OK" : status == 201 ? "Created" :
+                         status == 400 ? "Bad Request" : status == 401 ? "Unauthorized" :
+                         status == 404 ? "Not Found" : status == 405 ? "Method Not Allowed" :
+                         status == 413 ? "Payload Too Large" : "Service Unavailable";
+    header += "HTTP/1.1 " + std::to_string(status) + " " + reason + "\r\n";
     header += "Content-Type: " + type + "\r\n";
     header += "Content-Length: " + std::to_string(body.size()) + "\r\n";
     header += "Connection: " + (keepAlive_ ? std::string("Keep-Alive") : std::string("close")) + "\r\n";
@@ -113,7 +196,9 @@ void HttpData::sendResponse(int status, const std::string& type, const std::stri
     // 2. 优化：不再进行 outBuffer_ = header + body 的大字符串拼接
     // 建议将 outBuffer_ 改为支持多块数据的结构，或者直接存入专门的响应队列
     outBuffer_.append(header);
-    outBuffer_.append(body);
+    if (method_ != METHOD_HEAD) {
+      outBuffer_.append(body);
+    }
     submitAsyncWrite(); // 开始发送
 }
 
@@ -133,7 +218,7 @@ void HttpData::sendMsg(const std::string& msg) {
     
     // 2. 将任务丢进所属 Loop 的队列，确保线程安全
     loop_->runInLoop([self, msg]() {
-        self->handleWriteInLoop(msg);
+        self->handleWriteInLoop(webSocketFrame(0x1, msg));
     });
 }
 
@@ -208,6 +293,8 @@ void HttpData::reset() {
   state_ = STATE_PARSE_URI;
   hState_ = H_START;
   headers_.clear();
+  contentLength_ = 0;
+  hasContentLength_ = false;
   // keepAlive_ = false;
   if (timer_.lock()) {
     shared_ptr<TimerNode> my_timer(timer_.lock());
@@ -258,6 +345,13 @@ void HttpData::handleRead() {
             break;
         }
 
+        if (inBuffer_.readableBytes() >
+            static_cast<int>(kMaxHeaderBytes + kMaxBodyBytes)) {
+            error_ = true;
+            handleError(fd_, 413, "Payload Too Large");
+            break;
+        }
+
         if (state_ == STATE_WEBSOCKET) {
             handleWebSocketFrame();
             break; // WebSocket 处理完或数据不足，直接跳出等待下一次 EPOLLIN
@@ -301,20 +395,7 @@ void HttpData::handleRead() {
 
         // 3. 接收 Body (这里是之前出问题最多的地方)
         if (state_ == STATE_RECV_BODY) {
-            int content_length = -1;
-            
-            // --- [修复] 忽略大小写查找 Content-Length ---
-            for(auto& h : headers_) {
-                string k = h.first;
-                std::transform(k.begin(), k.end(), k.begin(), ::tolower);
-                if(k == "content-length") {
-                    content_length = stoi(h.second);
-                    break;
-                }
-            }
-            // ------------------------------------------
-
-            if (content_length == -1) {
+            if (!hasContentLength_) {
                 // 如果找不到 Content-Length，报错
                 error_ = true;
                 handleError(fd_, 400, "Bad Request: Lack of argument (Content-length)");
@@ -323,7 +404,7 @@ void HttpData::handleRead() {
 
             // [关键] 检查数据有没有收全
             // 注意：inBuffer_ 此时包含了整个 body 的数据
-            if (inBuffer_.readableBytes() < content_length) {
+            if (inBuffer_.readableBytes() < static_cast<int>(contentLength_)) {
                 // 数据不够，跳出循环，等待下一次 epoll 事件（ANALYSIS_AGAIN 的效果）
                 break; 
             }
@@ -374,91 +455,85 @@ void HttpData::handleRead() {
 }
 
 void HttpData::handleWebSocketFrame() {
-    std::string inStr = inBuffer_.peekAllAsString();
-    while (inStr.size() >= 2) { // 至少要有头部 2 字节
-        const unsigned char* data = (const unsigned char*)inStr.c_str();
-        
-        // --- 字节 1 ---
-        bool fin = (data[0] & 0x80) != 0;
-        int opcode = data[0] & 0x0F;
-        
-        // --- 字节 2 ---
-        bool masked = (data[1] & 0x80) != 0;
-        uint64_t payloadLen = data[1] & 0x7F;
-        
-        int headLen = 2;
-        
-        // 处理扩展长度
-        if (payloadLen == 126) {
-            if (inStr.size() < 4) return; // 数据不够，等下次
-            // 大端序转本机序 (简化处理，假设是 x86/ARM 小端)
-            payloadLen = (data[2] << 8) | data[3];
-            headLen = 4;
-        } else if (payloadLen == 127) {
-            if (inStr.size() < 10) return; // 数据不够
-            // 简单处理，只取低位（一般 msg 不会这么大）
-            payloadLen = 0; // 需要完整的 64 位转换逻辑
-            headLen = 10; 
-        }
-        
-        // 处理掩码 Key (客户端发来的必须有掩码)
-        unsigned char maskingKey[4];
-        if (masked) {
-            if (inStr.size() < headLen + 4) return; // 数据不够
-            for (int i = 0; i < 4; ++i) maskingKey[i] = data[headLen + i];
-            headLen += 4;
-        }
-        
-        // 检查 Payload 是否收齐
-        if (inStr.size() < headLen + payloadLen) {
-            return; // 数据不够，等待下一次 epoll 触发
-        }
-        
-        // --- 开始解码数据 ---
-        string payload;
-        payload.resize(payloadLen);
-        const unsigned char* rawPayload = data + headLen;
-        
-        for (size_t i = 0; i < payloadLen; ++i) {
-            // XOR 解码：Data[i] ^ Mask[i % 4]
-            payload[i] = rawPayload[i] ^ maskingKey[i % 4];
-        }
-        
-        // --- 业务处理 ---
-        if (opcode == 0x8) { // Close Frame
-            connectionState_ = H_DISCONNECTING;
-            inBuffer_.clear();
-            return;
-        } else if (opcode == 0x1) {
-    try {
-        // 1. 将解码后的 payload 转为 JSON 对象
-        auto j = nlohmann::json::parse(payload);
-        
-        // 2. 提取业务指令
-        std::string type = j.value("type", "unknown");
+  std::string input = inBuffer_.peekAllAsString();
+  while (input.size() >= 2) {
+    const auto* data = reinterpret_cast<const unsigned char*>(input.data());
+    const bool fin = (data[0] & 0x80) != 0;
+    const unsigned char opcode = data[0] & 0x0f;
+    const bool masked = (data[1] & 0x80) != 0;
+    std::uint64_t payloadLength = data[1] & 0x7f;
+    std::size_t headerLength = 2;
 
-        if (type == "chat") {
-            std::string roomId = j.at("roomId").get<std::string>();
-            std::string content = j.at("content").get<std::string>();
-            
-            // 调用单例管理器进行房间广播
-            ChatManager::getInstance().broadcastToRoom(roomId,content,this->fd_);
-        } 
-        else if (type == "join") {
-            std::string roomId = j.at("roomId").get<std::string>();
-            ChatManager::getInstance().joinRoom(roomId, shared_from_this());
-            // 可选：回发一个 JSON 确认包
+    if ((data[0] & 0x70) != 0 || !masked || (!fin && opcode >= 0x8)) {
+      error_ = true;
+      connectionState_ = H_DISCONNECTING;
+      return;
+    }
+    if (payloadLength == 126) {
+      if (input.size() < 4) return;
+      payloadLength = (static_cast<std::uint64_t>(data[2]) << 8) | data[3];
+      headerLength = 4;
+    } else if (payloadLength == 127) {
+      if (input.size() < 10) return;
+      payloadLength = 0;
+      for (int index = 0; index < 8; ++index) {
+        payloadLength = (payloadLength << 8) | data[2 + index];
+      }
+      headerLength = 10;
+    }
+    if (!fin || (opcode >= 0x8 && payloadLength > 125) ||
+        payloadLength > kMaxWebSocketPayloadBytes ||
+        input.size() < headerLength + 4 + payloadLength) {
+      if (payloadLength <= kMaxWebSocketPayloadBytes &&
+          input.size() < headerLength + 4 + payloadLength) return;
+      error_ = true;
+      connectionState_ = H_DISCONNECTING;
+      return;
+    }
+
+    const unsigned char* mask = data + headerLength;
+    const unsigned char* body = mask + 4;
+    std::string payload(static_cast<std::size_t>(payloadLength), '\0');
+    for (std::size_t index = 0; index < payload.size(); ++index) {
+      payload[index] = static_cast<char>(body[index] ^ mask[index % 4]);
+    }
+    inBuffer_.retrieve(static_cast<int>(headerLength + 4 + payloadLength));
+
+    if (opcode == 0x8) {
+      connectionState_ = H_DISCONNECTING;
+      return;
+    }
+    if (opcode == 0x9) {
+      handleWriteInLoop(webSocketFrame(0xA, payload));
+    } else if (opcode == 0x1) {
+      try {
+        const json message = json::parse(payload);
+        const std::string type = message.value("type", "");
+        if (type == "join" && message.contains("roomId") &&
+            message["roomId"].is_string()) {
+          ChatManager::getInstance().joinRoom(message["roomId"].get<std::string>(),
+                                              shared_from_this());
+        } else if (type == "chat" && message.contains("roomId") &&
+                   message.contains("content") && message["roomId"].is_string() &&
+                   message["content"].is_string()) {
+          const std::string content = message["content"].get<std::string>();
+          if (content.size() <= 4096) {
+            ChatManager::getInstance().broadcastToRoom(
+                message["roomId"].get<std::string>(),
+                json{{"type", "chat"}, {"roomId", message["roomId"]},
+                     {"content", content}}.dump(), fd_);
+          }
         }
-        
-    } catch (const std::exception& e) {
-        // 重要：如果不是 JSON 格式，捕获异常防止崩溃
-        LOG << "非法的业务报文格式: " << e.what();
+      } catch (const std::exception&) {
+        // Invalid application messages are ignored without terminating the socket.
+      }
+    } else if (opcode != 0xA) {
+      error_ = true;
+      connectionState_ = H_DISCONNECTING;
+      return;
     }
+    input = inBuffer_.peekAllAsString();
   }
-        // 移除已处理的一帧数据
-        inBuffer_.retrieve(headLen + payloadLen);
-        inStr = inBuffer_.peekAllAsString(); // refresh the peeked string loop
-    }
 }
 
 
@@ -537,123 +612,107 @@ void HttpData::handleConn() {
 }
 
 URIState HttpData::parseURI() {
-    std::string str = inBuffer_.peekAllAsString();
-    size_t pos = str.find("\r\n");
-    if (pos == std::string::npos)
-        return PARSE_URI_AGAIN;
+  const std::string input = inBuffer_.peekAllAsString();
+  const std::size_t end = input.find("\r\n");
+  if (end == std::string::npos) {
+    return input.size() > kMaxRequestLineBytes ? PARSE_URI_ERROR : PARSE_URI_AGAIN;
+  }
+  if (end == 0 || end > kMaxRequestLineBytes) return PARSE_URI_ERROR;
 
-    std::string request_line = str.substr(0, pos);
-    inBuffer_.retrieve(pos + 2); // 吃掉 \r\n
+  const std::string line = input.substr(0, end);
+  const std::size_t firstSpace = line.find(' ');
+  const std::size_t secondSpace = line.find(' ', firstSpace + 1);
+  if (firstSpace == std::string::npos || secondSpace == std::string::npos ||
+      line.find(' ', secondSpace + 1) != std::string::npos) {
+    return PARSE_URI_ERROR;
+  }
+  const std::string method = line.substr(0, firstSpace);
+  if (method == "GET") method_ = METHOD_GET;
+  else if (method == "POST") method_ = METHOD_POST;
+  else if (method == "HEAD") method_ = METHOD_HEAD;
+  else return PARSE_URI_ERROR;
 
-    // method
-    size_t method_end = request_line.find(' ');
-    if (method_end == std::string::npos)
-        return PARSE_URI_ERROR;
+  const std::string target = line.substr(firstSpace + 1, secondSpace - firstSpace - 1);
+  const std::string version = line.substr(secondSpace + 1);
+  if (target.empty() || target.size() > 2048 || version.empty()) return PARSE_URI_ERROR;
+  if (version == "HTTP/1.1") HTTPVersion_ = HTTP_11;
+  else if (version == "HTTP/1.0") HTTPVersion_ = HTTP_10;
+  else return PARSE_URI_ERROR;
 
-    std::string method = request_line.substr(0, method_end);
-    if (method == "GET") method_ = METHOD_GET;
-    else if (method == "POST") method_ = METHOD_POST;
-    else if (method == "HEAD") method_ = METHOD_HEAD;
-    else return PARSE_URI_ERROR;
-
-    // uri
-    size_t uri_end = request_line.find(' ', method_end + 1);
-    if (uri_end == std::string::npos)
-        return PARSE_URI_ERROR;
-
-    uri_ = request_line.substr(method_end + 1, uri_end - method_end - 1);
-
-    // 去掉 query
-    size_t qpos = uri_.find('?');
-    if (qpos != std::string::npos) {
-        query_ = uri_.substr(qpos + 1);
-        uri_ = uri_.substr(0, qpos);
-    }
-
-    // 文件名
-    if (uri_ == "/")
-        fileName_ = "index.html";
-    else
-        fileName_ = uri_.substr(1);
-
-    // version
-    std::string version = request_line.substr(uri_end + 1);
-    if (version == "HTTP/1.1") HTTPVersion_ = HTTP_11;
-    else if (version == "HTTP/1.0") HTTPVersion_ = HTTP_10;
-    else return PARSE_URI_ERROR;
-    /*
-    std::cout<< "[parseURI] method=" << method_
-    << " uri=" << uri_
-    << " fileName=" << fileName_
-    << " inBuffer=[" << inBuffer_ << "]"<<std::endl;
-    */
-    return PARSE_URI_SUCCESS;
+  const std::size_t queryStart = target.find('?');
+  uri_ = target.substr(0, queryStart);
+  query_ = queryStart == std::string::npos ? "" : target.substr(queryStart + 1);
+  if (hasPathTraversal(uri_)) return PARSE_URI_ERROR;
+  path_ = uri_;
+  fileName_ = uri_ == "/" ? "index.html" : uri_.substr(1);
+  inBuffer_.retrieve(static_cast<int>(end + 2));
+  return PARSE_URI_SUCCESS;
 }
 
 
 HeaderState HttpData::parseHeaders() {
-    std::string str = inBuffer_.peekAllAsString();
-    size_t pos = str.find("\r\n\r\n");
-    if (pos == std::string::npos) return PARSE_HEADER_AGAIN;//string::npos未找到
+  const std::string input = inBuffer_.peekAllAsString();
+  const std::size_t terminator = input.find("\r\n\r\n");
+  if (terminator == std::string::npos) {
+    return input.size() > kMaxHeaderBytes ? PARSE_HEADER_ERROR : PARSE_HEADER_AGAIN;
+  }
+  if (terminator > kMaxHeaderBytes) return PARSE_HEADER_ERROR;
 
-    std::string header_str = str.substr(0, pos);
-    inBuffer_.retrieve(pos + 4); 
-
-    size_t start = 0;
-    while (start < header_str.size()) {
-        size_t end = header_str.find("\r\n", start);
-        if (end == std::string::npos) break;
-
-        std::string line = header_str.substr(start, end - start);
-        start = end + 2;
-
-        // 重点：去掉行首可能存在的多余换行或空格
-        while(!line.empty() && (line[0] == '\n' || line[0] == '\r')) 
-            line.erase(line.begin());
-
-        if (line.empty()) continue;
-
-        size_t colon = line.find(':');
-        if (colon == std::string::npos) continue;
-
-        std::string key = line.substr(0, colon);
-        std::string value = line.substr(colon + 1);
-
-        // 去掉 Value 的空格
-        size_t v_start = value.find_first_not_of(" \t");
-        size_t v_end = value.find_last_not_of(" \t");
-        if (v_start != std::string::npos)
-            headers_[key] = value.substr(v_start, v_end - v_start + 1);
+  const std::string block = input.substr(0, terminator);
+  std::size_t start = 0;
+  std::size_t count = 0;
+  while (start < block.size()) {
+    const std::size_t end = block.find("\r\n", start);
+    const std::size_t lineEnd = end == std::string::npos ? block.size() : end;
+    const std::string line = block.substr(start, lineEnd - start);
+    const std::size_t colon = line.find(':');
+    if (colon == std::string::npos || colon == 0 || ++count > kMaxHeaderCount) {
+      return PARSE_HEADER_ERROR;
     }
-
-    // 根据 Connection 头和 HTTP 版本设置 keepAlive_
-    // HTTP/1.1 默认长连接；HTTP/1.0 默认短连接
-    auto it = headers_.find("Connection");
-    if (it != headers_.end()) {
-        std::string conn = it->second;
-        std::transform(conn.begin(), conn.end(), conn.begin(), ::tolower);
-        keepAlive_ = (conn.find("keep-alive") != std::string::npos);
-    } else {
-        keepAlive_ = (HTTPVersion_ == HTTP_11);
+    const std::string key = toLower(line.substr(0, colon));
+    const std::size_t valueStart = line.find_first_not_of(" \t", colon + 1);
+    const std::string value = valueStart == std::string::npos ? "" :
+        line.substr(valueStart, line.find_last_not_of(" \t") - valueStart + 1);
+    if (key.size() > 128 || value.size() > 8192) return PARSE_HEADER_ERROR;
+    if (key == "content-length") {
+      const auto length = parseUnsignedSize(value, kMaxBodyBytes);
+      if (!length.has_value() || (hasContentLength_ && contentLength_ != *length)) {
+        return PARSE_HEADER_ERROR;
+      }
+      contentLength_ = *length;
+      hasContentLength_ = true;
     }
-
-    return PARSE_HEADER_SUCCESS;
+    headers_[key] = value;
+    if (end == std::string::npos) break;
+    start = end + 2;
+  }
+  inBuffer_.retrieve(static_cast<int>(terminator + 4));
+  const auto connection = headers_.find("connection");
+  keepAlive_ = connection == headers_.end() ? HTTPVersion_ == HTTP_11 :
+      toLower(connection->second).find("keep-alive") != std::string::npos;
+  return PARSE_HEADER_SUCCESS;
 }
 
 AnalysisState HttpData::handleWebSocketHandshake() {
 
     // 1. 必须是 WebSocket 升级请求
-    if (headers_.find("Upgrade") == headers_.end() ||
-        headers_.find("Sec-WebSocket-Key") == headers_.end()) {
+    if (headers_.find("upgrade") == headers_.end() ||
+        headers_.find("sec-websocket-key") == headers_.end()) {
         handleError(fd_, 400, "Bad WebSocket Handshake");
         return ANALYSIS_ERROR;
     }
 
     // 2. 检查 Upgrade 字段
-    std::string upgrade_val = headers_["Upgrade"];
-    std::transform(upgrade_val.begin(), upgrade_val.end(), upgrade_val.begin(), ::tolower);
-    if (upgrade_val != "websocket") {
+    const std::string upgrade_val = toLower(headers_["upgrade"]);
+    const auto connection = headers_.find("connection");
+    if (upgrade_val != "websocket" || connection == headers_.end() ||
+        toLower(connection->second).find("upgrade") == std::string::npos) {
         handleError(fd_, 400, "Not WebSocket");
+        return ANALYSIS_ERROR;
+    }
+    const auto version = headers_.find("sec-websocket-version");
+    if (version == headers_.end() || version->second != "13") {
+        handleError(fd_, 400, "Unsupported WebSocket Version");
         return ANALYSIS_ERROR;
     }
 
@@ -668,7 +727,7 @@ AnalysisState HttpData::handleWebSocketHandshake() {
     // The verified subject is available in *username for future session binding.
 
     // 5. 计算 Accept Key
-    std::string clientKey = headers_["Sec-WebSocket-Key"];
+    const std::string clientKey = headers_["sec-websocket-key"];
     std::string acceptKey = CryptoUtil::computeAcceptKey(clientKey);
 
     // 6. 构造握手响应
@@ -692,15 +751,18 @@ AnalysisState HttpData::handleWebSocketHandshake() {
 }
 
 std::string HttpData::getQueryParam(const std::string& key) {
-    std::string target = key + "=";
-    size_t pos = query_.find(target);
-    if (pos == std::string::npos) return "";
-
-    size_t start = pos + target.size();
-    size_t end = query_.find('&', start);
-    if (end == std::string::npos) end = query_.size();
-
-    return query_.substr(start, end - start);
+  std::size_t start = 0;
+  while (start <= query_.size()) {
+    const std::size_t end = query_.find('&', start);
+    const std::string item = query_.substr(start, end - start);
+    const std::size_t equal = item.find('=');
+    if (equal != std::string::npos && item.substr(0, equal) == key) {
+      return item.substr(equal + 1);
+    }
+    if (end == std::string::npos) break;
+    start = end + 1;
+  }
+  return {};
 }
 
 AnalysisState HttpData::analysisRequest() {
@@ -713,10 +775,10 @@ AnalysisState HttpData::analysisRequest() {
         return ANALYSIS_SUCCESS;
     }
 
-    if (uri_ == "/ping") {
-    sendResponse(200, "text/plain", "OK");
-    return ANALYSIS_SUCCESS;
-}
+    if ((method_ == METHOD_GET || method_ == METHOD_HEAD) && uri_ == "/ping") {
+      sendResponse(200, "text/plain", "OK");
+      return ANALYSIS_SUCCESS;
+    }
 
     // ==========================================================
     // 2. 处理登录接口
@@ -733,13 +795,6 @@ AnalysisState HttpData::analysisRequest() {
         return handleWebSocketHandshake();
     }
 
-    // ==========================================================
-    // 4. 普通 HTTP GET（静态文件）
-    // ==========================================================
-    if (method_ == METHOD_GET || method_ == METHOD_HEAD) {
-        return handleStaticFile();
-    }
-
     if (path_ == "/room/create" && method_ == METHOD_POST) {
         RoomController::handleCreateRoom(shared_from_this());
         return ANALYSIS_SUCCESS;
@@ -749,6 +804,10 @@ AnalysisState HttpData::analysisRequest() {
         return ANALYSIS_SUCCESS;
     }
 
+    if (method_ == METHOD_GET || method_ == METHOD_HEAD) {
+        return handleStaticFile();
+    }
+
     //其他情况
     handleError(fd_, 405, "Method Not Allowed");
     return ANALYSIS_ERROR;
@@ -756,57 +815,52 @@ AnalysisState HttpData::analysisRequest() {
 
 
 AnalysisState HttpData::handleStaticFile() {
-    // 1. 修正路径拼接逻辑
-    if (fileName_.empty() || fileName_ == "/") {
-        fileName_ = "index.html";
-    }
-    // 确保 path 结构正确：./wwwroot/index.html
-    std::string path = "./wwwroot/" + fileName_;
-
-    struct stat sbuf;
-    // 2. 检查文件状态
-    if (stat(path.c_str(), &sbuf) < 0 || S_ISDIR(sbuf.st_mode)) {
-        // std::cout removed: blocking stdout flush on every 404 kills worker threads
-        handleError(fd_, 404, "Not Found");
-        // --- 重点修改：返回 SUCCESS，允许服务器把 404 页面发给浏览器 ---
-        return ANALYSIS_SUCCESS; 
-    }
-
-    // 3. 获取 MIME 类型
-    std::string filetype = "text/plain";
-    size_t dot = path.find_last_of('.');
-    if (dot != std::string::npos)
-        filetype = MimeType::getMime(path.substr(dot));
-
-    // 4. 构造响应头
-    std::string header;
-    header += "HTTP/1.1 200 OK\r\n";
-    header += "Content-Type: " + filetype + "\r\n";
-    header += "Content-Length: " + std::to_string(sbuf.st_size) + "\r\n";
-    header += "Connection: " + (keepAlive_ ? std::string("Keep-Alive") : std::string("Close")) + "\r\n";
-    header += "\r\n";
-
-    outBuffer_.append(header);
-
-    // 5. 打开文件准备发送
-    int src_fd = open(path.c_str(), O_RDONLY);
-    if (src_fd < 0) {
-        handleError(fd_, 404, "Not Found");
-        return ANALYSIS_SUCCESS;
-    }
-
-    // 立刻把响应头发送出去（如果网卡缓存满了报 EAGAIN 丢弃也不影响测试大局）
-    int savedErrno = 0;
-    ssize_t head_n = outBuffer_.writeFd(fd_, &savedErrno);
-    if (head_n == -1) head_n = 0;
-
-    // 使用 sendfile 把文件体在内核态直接塞给网卡！真正的零拷贝！
-    off_t offset = 0;
-    sendfile(fd_, src_fd, &offset, sbuf.st_size);
-
-    close(src_fd);
-
+  if (fileName_.empty() || hasPathTraversal(uri_)) {
+    handleError(fd_, 404, "Not Found");
     return ANALYSIS_SUCCESS;
+  }
+  std::error_code filesystemError;
+  const std::filesystem::path root =
+      std::filesystem::canonical("./wwwroot", filesystemError);
+  const std::filesystem::path requested =
+      std::filesystem::canonical(root / fileName_, filesystemError);
+  if (filesystemError || !isWithinDirectory(root, requested)) {
+    handleError(fd_, 404, "Not Found");
+    return ANALYSIS_SUCCESS;
+  }
+  const std::string path = requested.string();
+  struct stat metadata {};
+  if (stat(path.c_str(), &metadata) < 0 || !S_ISREG(metadata.st_mode)) {
+    handleError(fd_, 404, "Not Found");
+    return ANALYSIS_SUCCESS;
+  }
+  if (metadata.st_size < 0 ||
+      static_cast<std::uintmax_t>(metadata.st_size) > kMaxStaticFileBytes) {
+    handleError(fd_, 413, "File Too Large");
+    return ANALYSIS_SUCCESS;
+  }
+
+  const std::size_t contentLength = static_cast<std::size_t>(metadata.st_size);
+  const std::size_t dot = path.find_last_of('.');
+  const std::string mime = dot == std::string::npos ? "application/octet-stream" :
+      MimeType::getMime(path.substr(dot));
+  std::string header = "HTTP/1.1 200 OK\r\nContent-Type: " + mime +
+      "\r\nContent-Length: " + std::to_string(contentLength) +
+      "\r\nConnection: " + (keepAlive_ ? "Keep-Alive" : "close") + "\r\n\r\n";
+  outBuffer_.append(header);
+  if (method_ == METHOD_GET) {
+    std::ifstream file(path, std::ios::binary);
+    std::string body((std::istreambuf_iterator<char>(file)),
+                     std::istreambuf_iterator<char>());
+    if (body.size() != contentLength) {
+      outBuffer_.clear();
+      handleError(fd_, 404, "Not Found");
+      return ANALYSIS_SUCCESS;
+    }
+    outBuffer_.append(body);
+  }
+  submitAsyncWrite();
+  return ANALYSIS_SUCCESS;
 }
 
 void HttpData::handleError(int fd, int err_num, string short_msg) {
@@ -926,6 +980,12 @@ void HttpData::handleReadComplete(int bytes_read) {
         connectionState_ = H_DISCONNECTING;
     } else {
         inBuffer_.commitWrite(bytes_read);
+        if (inBuffer_.readableBytes() >
+            static_cast<int>(kMaxHeaderBytes + kMaxBodyBytes)) {
+            error_ = true;
+            handleError(fd_, 413, "Payload Too Large");
+            return;
+        }
     }
 
     if (state_ == STATE_WEBSOCKET) {
@@ -970,15 +1030,12 @@ void HttpData::handleReadComplete(int bytes_read) {
         }
 
         if (state_ == STATE_RECV_BODY) {
-            int content_length = -1;
-            if (headers_.find("Content-Length") != headers_.end()) {
-                content_length = std::stoi(headers_["Content-Length"]);
-            } else {
+            if (!hasContentLength_) {
                 error_ = true;
                 handleError(fd_, 400, "Bad Request: Lack of content_length");
                 return;
             }
-            if (inBuffer_.readableBytes() < content_length) {
+            if (inBuffer_.readableBytes() < static_cast<int>(contentLength_)) {
                 needsMoreData = true;
             } else {
                 state_ = STATE_ANALYSIS;

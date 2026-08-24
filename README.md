@@ -251,10 +251,9 @@ cmake --build build/debug --target LoggingStressTest --parallel
 
 - 项目依赖 Linux 专有接口 `io_uring`、`epoll`、`eventfd` 和 `sendfile`，不能直接在原生 Windows 环境编译运行。
 - 未配置数据库或 JWT secret 时，认证功能会显式关闭；这适合静态文件开发，不可将其作为已配置认证运行。
-- 房间接口代码仍在联调中，`analysisRequest()` 使用的 `path_` 当前没有在 URI 解析流程中赋值，`/room/create` 和 `/room/list` 需要进一步修正路由匹配。
-- `wwwroot/index.html` 与后端当前 WebSocket JSON 字段存在不一致，前端发送的是 `user`/`msg`，后端解析的是 `roomId`/`content`，需要统一协议。
+- 房间的权限、断线清理和数据库端到端联调尚未完成；聊天室仍定位为演示功能。
 - 数据库访问仍在 EventLoop 中同步执行；数据库慢查询会影响网络循环，后续需要移至独立执行器。
-- 静态文件路径、请求体大小、WebSocket 控制帧和异常处理仍需要更完整的安全边界与协议校验。
+- HTTP 与 WebSocket 已有基础输入上限和协议校验，但尚未支持 HTTP chunked encoding、WebSocket 分片帧或大文件流式传输。
 - 日志文件轮转接口尚未实现，运行时应自行管理日志文件大小和保存周期。
 
 ## 相关文档
@@ -269,6 +268,9 @@ cmake --build build/debug --target LoggingStressTest --parallel
 - [可切换 Poller 与性能对比](docs/Poller_Backends.md)
 - [配置](docs/Configuration.md)
 - [安全模型](docs/Security_Model.md)
+- [HTTP 协议边界](docs/HTTP_Protocol.md)
+- [WebSocket 协议](docs/WebSocket_Protocol.md)
+- [静态文件安全](docs/Static_File_Security.md)
 
 ## 许可证
 

@@ -25,7 +25,7 @@
 | 构建 | 根目录 CMake 使用全局编译选项和 `GLOB_RECURSE`，测试未接入 CTest | 构建不透明，测试无法在 CI 自动执行 |
 | I/O 生命周期 | `IoUring` 用 `fd` 编码完成事件，按 `fd` 查表回调 | fd 被关闭并复用时，旧 CQE 可能误投递给新连接 |
 | 连接资源 | `HttpData` 已开始修复对象池复用和 fd 关闭 | 仍需用 ASan/LSan 和高频断连验证完整生命周期 |
-| HTTP/聊天协议 | `path_` 没有在 URI 解析中赋值；前后端 WebSocket 字段不一致 | 房间 API 和聊天流程不能作为可信演示功能 |
+| HTTP/聊天协议 | URI 路由、静态文件边界、WebSocket 基础帧校验和前后端字段已统一 | 分片帧、房间授权和聊天室端到端测试仍未完成 |
 | 安全 | JWT 密钥硬编码；密码明文存储；SQL 字符串拼接 | 不能暴露到公网，不能作为完成态功能宣传 |
 | 数据库 | 连接池初始化在 `Main.cpp` 中被注释 | 注册和登录默认不可用且配置不可交付 |
 | 工程交付 | 没有 CTest/CI、运行配置、容器化、基准报告和统一文档 | 别人无法稳定复现项目能力 |
@@ -129,6 +129,8 @@ cmake/                    # CMake 辅助模块
 **学习重点：** RAII、`shared_ptr`/`weak_ptr` 环、异步取消语义、ABA/fd reuse 问题、内核完成队列。
 
 ### Phase 2：协议实现与功能闭环
+
+**状态：核心协议边界已完成，架构拆分待 Phase 4 推进。** 已修复 URI 到 `path_`/`query_` 的赋值、房间路由和前后端聊天字段不一致；请求行、Header、Body、静态文件和 WebSocket 帧均有显式上限。静态目录拒绝路径穿越，`HEAD` 不再发送 body，WebSocket 握手与掩码/控制帧校验已收紧，并新增真实服务的 HTTP 黑盒回归。HTTP parser/response writer/router 的独立模块化、WebSocket 分片和聊天室独立服务仍待完成。
 
 **目标：** 将 HTTP、WebSocket 和聊天室变成经过黑盒测试的完整功能，而不是分散在 `HttpData` 中的条件分支。
 

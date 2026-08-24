@@ -51,7 +51,13 @@ cmake --build --preset asan --parallel
 ctest --preset asan
 ```
 
-当前自动测试为 `base.object_pool`。`tests/base/LoggingTest.cpp` 是高输出量的手工压力程序，不会由 CTest 自动执行；需要时使用：
+自动测试包含基础组件、生命周期、Poller、配置和加密单元测试，以及会启动真实服务的 `integration.http_smoke`。只运行 HTTP 黑盒测试：
+
+```bash
+ctest --preset debug -L integration --output-on-failure
+```
+
+`tests/base/LoggingTest.cpp` 是高输出量的手工压力程序，不会由 CTest 自动执行；需要时使用：
 
 ```bash
 cmake --preset debug -DHTTPSERVER_BUILD_MANUAL_TESTS=ON

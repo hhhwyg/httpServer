@@ -258,7 +258,7 @@ async function login() {
                 const data = JSON.parse(evt.data);
                 // 只有当消息属于当前房间时才显示（除非后端已经做了分发过滤）
                 if (data.roomId === currentRoomId || data.type === "system") {
-                    addMsg(data.user || "系统", data.msg, data.user === myName ? "me" : "other");
+                    addMsg(data.user || "成员", data.content, data.user === myName ? "me" : "other");
                 }
             } catch(e) {
                 addMsg("系统", evt.data, "system");
@@ -358,8 +358,7 @@ function renderRoomList(rooms) {
             const payload = {
                 type: "chat",
                 roomId: currentRoomId,
-                user: myName,
-                msg: input.value
+                content: input.value
             };
             ws.send(JSON.stringify(payload));
             addMsg(myName, input.value, "me");

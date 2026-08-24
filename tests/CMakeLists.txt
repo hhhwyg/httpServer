@@ -44,6 +44,17 @@ target_link_libraries(HttpDataLifecycleTest PRIVATE httpserver::core)
 add_test(NAME httpdata.lifecycle COMMAND HttpDataLifecycleTest)
 set_tests_properties(httpdata.lifecycle PROPERTIES LABELS "unit;lifecycle")
 
+add_test(
+    NAME integration.http_smoke
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/HttpSmokeTest.sh
+            $<TARGET_FILE:WebServer> 18096
+)
+set_tests_properties(integration.http_smoke PROPERTIES
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    LABELS "integration;http"
+    TIMEOUT 20
+)
+
 if(HTTPSERVER_BUILD_MANUAL_TESTS)
     add_executable(LoggingStressTest base/LoggingTest.cpp)
     target_link_libraries(LoggingStressTest PRIVATE httpserver::core)

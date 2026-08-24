@@ -107,6 +107,8 @@ class HttpData : public std::enable_shared_from_this<HttpData> {
   ProcessState state_;
   ParseState hState_;
   bool keepAlive_;
+  std::size_t contentLength_ = 0;
+  bool hasContentLength_ = false;
   std::unordered_map<std::string, std::string> headers_;  // changed from map: O(1) vs O(logN) per lookup
   std::weak_ptr<TimerNode> timer_;
   std::unordered_map<int, std::shared_ptr<ChatRoom>> rooms_;
