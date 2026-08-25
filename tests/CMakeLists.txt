@@ -14,6 +14,14 @@ target_link_libraries(UringOperationRegistryTest PRIVATE httpserver_options)
 add_test(NAME base.uring_operation_registry COMMAND UringOperationRegistryTest)
 set_tests_properties(base.uring_operation_registry PROPERTIES LABELS "unit;uring")
 
+add_executable(ChannelOwnershipTest base/ChannelOwnershipTest.cpp)
+target_include_directories(ChannelOwnershipTest PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+)
+target_link_libraries(ChannelOwnershipTest PRIVATE httpserver::core)
+add_test(NAME base.channel_ownership COMMAND ChannelOwnershipTest)
+set_tests_properties(base.channel_ownership PROPERTIES LABELS "unit;transport")
+
 add_executable(PollerBackendTest base/PollerBackendTest.cpp)
 target_include_directories(PollerBackendTest PRIVATE
     ${PROJECT_SOURCE_DIR}/src

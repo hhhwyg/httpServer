@@ -169,6 +169,8 @@ cmake/                    # CMake 辅助模块
 
 ### Phase 4：模块边界与代码质量
 
+**状态：进行中。本轮已完成 transport/poller 与 `HttpData` 的类型解耦、Poller 接口命名统一、定时器回调化和 Channel 生命周期单测；应用层接口继续依赖 `HttpData`，历史代码格式与 clang-tidy 告警仍需清理。**
+
 **目标：** 在 Phase 1-3 的测试保护下，完成可维护的模块拆分和风格统一。
 
 - 按“目标架构”逐模块迁移，先迁移最稳定的 `base`/日志和 `transport`，再迁移协议、业务和基础设施；每次迁移只改路径、命名空间和 include，不混入逻辑修改。

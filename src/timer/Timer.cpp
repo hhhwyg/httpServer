@@ -1,27 +1,23 @@
 #include "Timer.h"
 #include <sys/time.h>
-#include <unistd.h>
-#include <queue>
+#include <utility>
 
-TimerNode::TimerNode(std::shared_ptr<HttpData> requestData, int timeout)
-    : deleted_(false), SPHttpData(requestData) {
+TimerNode::TimerNode(std::function<void()> onExpired, int timeout)
+    : deleted_(false), onExpired_(std::move(onExpired)) {
   struct timeval now;
-  gettimeofday(&now, NULL);
+  gettimeofday(&now, nullptr);
   // 以毫秒计
   expiredTime_ =
       (((now.tv_sec % 10000) * 1000) + (now.tv_usec / 1000)) + timeout;
 }
 
 TimerNode::~TimerNode() {
-  if (SPHttpData) SPHttpData->handleClose();
+  if (onExpired_) onExpired_();
 }
-
-TimerNode::TimerNode(TimerNode &tn)
-    : deleted_(false), expiredTime_(0), SPHttpData(tn.SPHttpData) {}
 
 void TimerNode::update(int timeout) {
   struct timeval now;
-  gettimeofday(&now, NULL);
+  gettimeofday(&now, nullptr);
   expiredTime_ =
       (((now.tv_sec % 10000) * 1000) + (now.tv_usec / 1000)) + timeout;
 }
@@ -29,7 +25,8 @@ void TimerNode::update(int timeout) {
 bool TimerNode::isValid() {
   struct timeval now;
   gettimeofday(&now, NULL);
-  size_t temp = (((now.tv_sec % 10000) * 1000) + (now.tv_usec / 1000));
+  const std::size_t temp =
+      (((now.tv_sec % 10000) * 1000) + (now.tv_usec / 1000));
   if (temp < expiredTime_)
     return true;
   else {
@@ -38,8 +35,8 @@ bool TimerNode::isValid() {
   }
 }
 
-void TimerNode::clearReq() {
-  SPHttpData.reset();
+void TimerNode::cancel() {
+  onExpired_ = {};
   this->setDeleted();
 }
 
@@ -47,10 +44,11 @@ TimerManager::TimerManager() {}
 
 TimerManager::~TimerManager() {}
 
-void TimerManager::addTimer(std::shared_ptr<HttpData> SPHttpData, int timeout) {
-  SPTimerNode new_node(new TimerNode(SPHttpData, timeout));
+std::shared_ptr<TimerNode> TimerManager::addTimer(
+    std::function<void()> onExpired, int timeout) {
+  SPTimerNode new_node(new TimerNode(std::move(onExpired), timeout));
   timerNodeQueue.push(new_node);
-  SPHttpData->linkTimer(new_node);
+  return new_node;
 }
 
 /* 处理逻辑是这样的~

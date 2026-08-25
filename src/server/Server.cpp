@@ -79,7 +79,7 @@ void Server::handNewConn() {
     req_info->init();
     // 2. 极其重要的检查：确保 HttpData 和它内部的 Channel 都存在
     if (req_info && req_info->getChannel()) {
-        req_info->getChannel()->setHolder(req_info);
+        req_info->getChannel()->setOwner(req_info);
         loop->queueInLoop(std::bind(&HttpData::newEvent, req_info));
     } else {
         LOG << "HttpData or Channel creation failed!";

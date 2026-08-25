@@ -217,6 +217,11 @@ void HttpData::init() {
       self->handleWriteComplete(bytesWritten);
     }
   });
+  channel_->setTimeoutHandler([weakSelf] {
+    if (const auto self = weakSelf.lock()) {
+      self->handleClose();
+    }
+  });
 }
 void HttpData::reset() {
   // inBuffer_.clear();
@@ -232,20 +237,11 @@ void HttpData::reset() {
   webSocketFragmented_ = false;
   closeAfterWrite_ = false;
   // keepAlive_ = false;
-  if (timer_.lock()) {
-    std::shared_ptr<TimerNode> my_timer(timer_.lock());
-    my_timer->clearReq();
-    timer_.reset();
-  }
+  separateTimer();
 }
 
-void HttpData::seperateTimer() {
-  // cout << "seperateTimer" << endl;
-  if (timer_.lock()) {
-    std::shared_ptr<TimerNode> my_timer(timer_.lock());
-    my_timer->clearReq();
-    timer_.reset();
-  }
+void HttpData::separateTimer() {
+  if (channel_) channel_->clearTimer();
 }
 
 void HttpData::handleRead() {
@@ -507,7 +503,7 @@ void HttpData::handleWrite() {
 
 void HttpData::handleConn() {
 
-  seperateTimer();
+  separateTimer();
   __uint32_t &events_ = channel_->getEvents();
   if (!error_ && connectionState_ == H_CONNECTED) {
     if (events_ != 0) {
@@ -737,8 +733,7 @@ void HttpData::handleClose() {
   closed_ = true;
   connectionState_ = H_DISCONNECTED;
 
-  // Keep the object alive while detaching the timer. TimerNode owns a shared
-  // pointer to HttpData and clearReq() can otherwise release the final owner.
+  // Keep the object alive while detaching callbacks and poller ownership.
   const std::shared_ptr<HttpData> guard(shared_from_this());
   if (channel_) {
     if (loop_) {
@@ -746,9 +741,9 @@ void HttpData::handleClose() {
     } else {
       channel_->deactivate();
     }
-    channel_->clearHolder();
+    channel_->clearOwner();
   }
-  seperateTimer();
+  separateTimer();
   if (fd_ >= 0) {
     httpserver::ChatApplication::Leave(fd_);
   }

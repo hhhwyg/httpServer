@@ -8,14 +8,11 @@
 #include <unordered_map>
 #include <cstdint>
 #include "base/ChainBuffer.h"
-#include "Timer.h"
 #include "httpserver/transport/Channel.h"
 #include "httpserver/transport/EventLoop.h"
 #include "httpserver/protocol/StaticFile.h"
 
 
-
-class TimerNode;
 
 enum ProcessState {
   STATE_PARSE_URI = 1,
@@ -67,10 +64,7 @@ class HttpData : public std::enable_shared_from_this<HttpData> {
     if (fd_ >= 0) close(fd_);
   }
   void reset();
-  void seperateTimer();
-  void linkTimer(std::shared_ptr<TimerNode> mtimer) {
-    timer_ = mtimer;
-  }
+  void separateTimer();
   httpserver::ChannelPtr getChannel() { return channel_; }
   httpserver::EventLoop* getLoop() { return loop_; }
   void handleClose();
@@ -112,7 +106,6 @@ class HttpData : public std::enable_shared_from_this<HttpData> {
   std::size_t contentLength_ = 0;
   bool hasContentLength_ = false;
   std::unordered_map<std::string, std::string> headers_;  // changed from map: O(1) vs O(logN) per lookup
-  std::weak_ptr<TimerNode> timer_;
   std::string webSocketFragment_;
   bool webSocketFragmented_ = false;
   bool closeAfterWrite_ = false;

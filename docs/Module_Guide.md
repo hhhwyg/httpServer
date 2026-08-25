@@ -49,7 +49,9 @@ messages; room cleanup is likewise delegated when the session closes.
 The public transport slices expose event-loop ownership, poller selection,
 channels, and server capacity configuration through
 `include/httpserver/transport`. The former forwarding headers under `src/`
-were removed after the in-repository consumers migrated.
+were removed after the in-repository consumers migrated. Pollers retain a
+type-erased owner only while a channel is registered and use a timeout callback,
+so transport does not depend on `HttpData` or the timer's business target.
 
 `src/epoll/` and `src/eventloop/EventLoopThreadPool.*` are active transport
 implementations. The legacy `src/thread/ThreadPool.*` is retained as an

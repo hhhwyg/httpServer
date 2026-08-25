@@ -42,12 +42,11 @@ EventLoop::EventLoop(PollerBackend backend, const PollerConfig& config)
   pwakeupChannel_->setEvents(EPOLLIN | EPOLLET);
   pwakeupChannel_->setReadHandler(std::bind(&EventLoop::handleRead, this));
   pwakeupChannel_->setConnHandler(std::bind(&EventLoop::handleConn, this));
-  poller_->epoll_add(pwakeupChannel_, 0);
+  poller_->add(pwakeupChannel_, 0);
 }
 
 void EventLoop::handleConn() {
-  // poller_->epoll_mod(wakeupFd_, pwakeupChannel_, (EPOLLIN | EPOLLET |
-  // EPOLLONESHOT), 0);
+  // modify(pwakeupChannel_, (EPOLLIN | EPOLLET | EPOLLONESHOT), 0);
   updatePoller(pwakeupChannel_, 0);
 }
 
@@ -96,15 +95,15 @@ void EventLoop::shutdown(ChannelPtr channel) {
 }
 
 void EventLoop::removeFromPoller(ChannelPtr channel) {
-  poller_->epoll_del(channel);
+  poller_->remove(channel);
 }
 
 void EventLoop::updatePoller(ChannelPtr channel, int timeout) {
-  poller_->epoll_mod(channel, timeout);
+  poller_->modify(channel, timeout);
 }
 
 void EventLoop::addToPoller(ChannelPtr channel, int timeout) {
-  poller_->epoll_add(channel, timeout);
+  poller_->add(channel, timeout);
 }
 
 void EventLoop::submitRead(ChannelPtr channel, void* buffer, std::size_t len) {

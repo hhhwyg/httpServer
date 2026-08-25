@@ -31,7 +31,7 @@ Main -b <backend>
 
 `Poller` 的职责是 fd 注册、兴趣事件更新、删除、非阻塞读写提交、等待完成事件和驱动超时。它不解析 HTTP，不持有路由状态，也不接触 MySQL 或聊天室业务。
 
-为了不扩大当前重构范围，接口暂时沿用旧名称 `epoll_add`、`epoll_mod`、`epoll_del`；它们表达的是通用注册、更新和删除语义，并不表示 `IoUring` 内部调用了 epoll。Phase 4 模块迁移时会统一重命名为 `add`、`modify`、`remove`。
+`Poller` 使用 `add`、`modify`、`remove` 表达通用注册、更新和删除语义；这些名称不表示 `IoUring` 内部调用了 epoll。
 
 ## 可复现对比
 

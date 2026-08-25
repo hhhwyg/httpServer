@@ -8,8 +8,6 @@
 
 #include <sys/epoll.h>
 
-class HttpData;
-
 namespace httpserver {
 
 class EventLoop;
@@ -25,12 +23,14 @@ class Channel {
   std::uint32_t revents_;
   std::uint32_t lastEvents_;
   bool active_;
-  std::weak_ptr<::HttpData> holder_;
+  std::weak_ptr<void> owner_;
+  Callback timeoutHandler_;
 
   Callback readHandler_;
   Callback writeHandler_;
   Callback errorHandler_;
   Callback connHandler_;
+  Callback timerCancellation_;
   AsyncCallback asyncReadHandler_;
   AsyncCallback asyncWriteHandler_;
 
@@ -42,9 +42,19 @@ class Channel {
   int getFd();
   void setFd(int fd);
 
-  void setHolder(std::shared_ptr<::HttpData> holder) { holder_ = holder; }
-  void clearHolder() { holder_.reset(); }
-  std::shared_ptr<::HttpData> getHolder() { return holder_.lock(); }
+  void setOwner(std::shared_ptr<void> owner) { owner_ = std::move(owner); }
+  void clearOwner() { owner_.reset(); }
+  std::shared_ptr<void> lockOwner() const { return owner_.lock(); }
+
+  void setTimeoutHandler(Callback handler) { timeoutHandler_ = std::move(handler); }
+  Callback getTimeoutHandler() const { return timeoutHandler_; }
+  void setTimerCancellation(Callback cancellation) {
+    timerCancellation_ = std::move(cancellation);
+  }
+  void clearTimer() {
+    if (timerCancellation_) timerCancellation_();
+    timerCancellation_ = {};
+  }
 
   void setReadHandler(Callback&& handler) { readHandler_ = std::move(handler); }
   void setWriteHandler(Callback&& handler) {

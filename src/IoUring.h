@@ -12,10 +12,9 @@ class IoUring : public httpserver::Poller {
   explicit IoUring(const httpserver::PollerConfig& config = {});
   ~IoUring() override;
 
-  // 与 Epoll 完全相同的接口
-  void epoll_add(httpserver::ChannelPtr request, int timeout) override;
-  void epoll_mod(httpserver::ChannelPtr request, int timeout) override;
-  void epoll_del(httpserver::ChannelPtr request) override;
+  void add(httpserver::ChannelPtr channel, int timeout) override;
+  void modify(httpserver::ChannelPtr channel, int timeout) override;
+  void remove(httpserver::ChannelPtr channel) override;
   // 真正的异步 I/O 接口
   void submitRead(httpserver::ChannelPtr request, void* buffer,
                   std::size_t len) override;
@@ -24,7 +23,7 @@ class IoUring : public httpserver::Poller {
 
   void processEvents() override;
 
-  void add_timer(httpserver::ChannelPtr request_data, int timeout);
+  void addTimer(httpserver::ChannelPtr channel, int timeout);
   void handleExpired() override;
   const char* name() const override { return "io_uring"; }
 
@@ -41,7 +40,7 @@ class IoUring : public httpserver::Poller {
   struct io_uring ring_;
   unsigned queueSize_;
   std::unordered_map<int, httpserver::ChannelPtr> channels_;
-  std::unordered_map<httpserver::Channel*, std::shared_ptr<HttpData>>
+  std::unordered_map<httpserver::Channel*, std::shared_ptr<void>>
       connectionOwners_;
   UringOperationRegistry operations_;
   TimerManager timerManager_;

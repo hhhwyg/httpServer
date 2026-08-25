@@ -12,9 +12,9 @@
 | `Channel` | `HttpData` 构造函数 | `HttpData` 与未完成的 `UringOperation` | `HttpData` 和旧 CQE 均释放后 |
 | 当前 poll | `IoUring::submitPollAdd()` | `UringOperationRegistry` | 收到 poll/CANCELLED CQE 后 |
 | 异步 read/write | `submitRead()` / `submitWrite()` | `UringOperationRegistry` | 收到对应 CQE 后 |
-| `TimerNode` | `TimerManager` | 定时器队列 | 超时或 `HttpData::seperateTimer()` 后 |
+| `TimerNode` | `TimerManager` | 定时器队列 | 超时或连接取消定时器后 |
 
-`Channel::holder_` 和 Channel 回调均使用 `weak_ptr<HttpData>`。这样不会形成 `HttpData -> Channel -> callback -> HttpData` 的引用环。Poller 的 `connectionOwners_` 是连接处于注册状态时唯一明确的强所有者；它按 `Channel*` 而不是 fd 索引，避免 fd 复用影响所有权。该规则同时适用于 `IoUring` 和 `Epoll` 后端。
+`Channel::owner_` 使用 `weak_ptr<void>`，连接回调使用弱引用捕获。这样不会形成 `HttpData -> Channel -> callback -> HttpData` 的引用环。Poller 的 `connectionOwners_` 是连接处于注册状态时唯一明确的强所有者；它按 `Channel*` 而不是 fd 索引，避免 fd 复用影响所有权。该规则同时适用于 `IoUring` 和 `Epoll` 后端。
 
 ## 状态与关闭顺序
 
@@ -32,7 +32,7 @@ accept
   -> 旧 read/write/poll CQE 到达后只释放操作记录，不再调用回调
 ```
 
-`handleClose()` 由 `closed_` 保护，重复调用不会重复关闭 fd。关闭前保留一个本地 `shared_ptr<HttpData>`，因为分离定时器时可能释放最后一个外部所有者。
+`handleClose()` 由 `closed_` 保护，重复调用不会重复关闭 fd。关闭前保留一个本地 `shared_ptr<HttpData>`，因为分离定时器时可能释放最后一个外部所有者。定时器只保存弱回调，取消句柄由 `Channel` 管理。
 
 ## fd 复用保护
 

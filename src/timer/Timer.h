@@ -1,36 +1,31 @@
 #pragma once
-#include <unistd.h>
+#include <cstddef>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <queue>
-#include "HttpData.h"
-#include "base/MutexLock.h"
-#include "base/noncopyable.h"
-
-
-class HttpData;
+#include <utility>
 
 class TimerNode {
  public:
-  TimerNode(std::shared_ptr<HttpData> requestData, int timeout);
+  TimerNode(std::function<void()> onExpired, int timeout);
   ~TimerNode();
-  TimerNode(TimerNode &tn);
   void update(int timeout);
   bool isValid();
-  void clearReq();
+  void cancel();
   void setDeleted() { deleted_ = true; }
   bool isDeleted() const { return deleted_; }
-  size_t getExpTime() const { return expiredTime_; }
+  std::size_t getExpTime() const { return expiredTime_; }
 
  private:
   bool deleted_;
-  size_t expiredTime_;
-  std::shared_ptr<HttpData> SPHttpData;
+  std::size_t expiredTime_;
+  std::function<void()> onExpired_;
 };
 
 struct TimerCmp {
-  bool operator()(std::shared_ptr<TimerNode> &a,
-                  std::shared_ptr<TimerNode> &b) const {
+  bool operator()(const std::shared_ptr<TimerNode>& a,
+                  const std::shared_ptr<TimerNode>& b) const {
     return a->getExpTime() > b->getExpTime();
   }
 };
@@ -39,7 +34,8 @@ class TimerManager {
  public:
   TimerManager();
   ~TimerManager();
-  void addTimer(std::shared_ptr<HttpData> SPHttpData, int timeout);
+  std::shared_ptr<TimerNode> addTimer(std::function<void()> onExpired,
+                                      int timeout);
   void handleExpiredEvent();
 
  private:

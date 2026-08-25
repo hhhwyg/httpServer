@@ -117,60 +117,61 @@ void IoUring::cancelOperation(UringOp type, int fd) {
   io_uring_sqe_set_data64(sqe, 0);
 }
 
-void IoUring::epoll_add(httpserver::ChannelPtr request, int timeout) {
-  if (!request || request->getFd() < 0) {
+void IoUring::add(httpserver::ChannelPtr channel, int timeout) {
+  if (!channel || channel->getFd() < 0) {
     return;
   }
 
-  const int fd = request->getFd();
-  request->activate();
-  request->EqualAndUpdateLastEvents();
-  channels_[fd] = request;
-  if (const std::shared_ptr<HttpData> holder = request->getHolder()) {
-    // Channel 的 holder 是 weak_ptr；注册期间 Poller 需要持有连接，
-    // 否则事件循环返回后 HttpData 可能提前析构。
-    connectionOwners_[request.get()] = holder;
+  const int fd = channel->getFd();
+  channel->activate();
+  channel->EqualAndUpdateLastEvents();
+  channels_[fd] = channel;
+  if (const std::shared_ptr<void> owner = channel->lockOwner()) {
+    // Channel 的 owner 是 weak_ptr；注册期间 Poller 需要持有连接，
+    // 否则事件循环返回后连接对象可能提前析构。
+    connectionOwners_[channel.get()] = owner;
   }
 
   if (timeout > 0) {
-    add_timer(request, timeout);
+    addTimer(channel, timeout);
   }
-  submitPollAdd(request);
+  submitPollAdd(channel);
 }
 
-void IoUring::epoll_mod(httpserver::ChannelPtr request, int timeout) {
-  if (!request || !request->isActive()) {
+void IoUring::modify(httpserver::ChannelPtr channel, int timeout) {
+  if (!channel || !channel->isActive()) {
     return;
   }
 
   if (timeout > 0) {
-    add_timer(request, timeout);
+    addTimer(channel, timeout);
   }
-  if (request->EqualAndUpdateLastEvents()) {
+  if (channel->EqualAndUpdateLastEvents()) {
     return;
   }
 
   // io_uring 的 poll 不能原地修改。取消旧请求并登记新请求；旧 CQE
   // 即使晚到，也会根据旧 token 被安全消费，不会影响新 poll。
-  cancelPoll(request->getFd());
-  submitPollAdd(request);
+  cancelPoll(channel->getFd());
+  submitPollAdd(channel);
 }
 
-void IoUring::epoll_del(httpserver::ChannelPtr request) {
-  if (!request) {
+void IoUring::remove(httpserver::ChannelPtr channel) {
+  if (!channel) {
     return;
   }
 
-  const int fd = request->getFd();
+  const int fd = channel->getFd();
   // 先失活再取消：已经在内核中的 CQE 仍可能返回，但不会再驱动回调。
-  request->deactivate();
+  channel->deactivate();
+  channel->clearTimer();
   cancelPoll(fd);
   cancelOperation(UringOp::kRead, fd);
   cancelOperation(UringOp::kWrite, fd);
-  connectionOwners_.erase(request.get());
+  connectionOwners_.erase(channel.get());
 
   const auto channelIt = channels_.find(fd);
-  if (channelIt != channels_.end() && channelIt->second == request) {
+  if (channelIt != channels_.end() && channelIt->second == channel) {
     channels_.erase(channelIt);
   }
 }
@@ -187,7 +188,7 @@ void IoUring::submitRead(httpserver::ChannelPtr request, void* buffer,
     return;
   }
 
-  // buffer 由 HttpData 的输入缓冲区提供，并在 isReading_ 为真期间保持有效。
+  // buffer 由连接输入缓冲区提供，并在读操作完成前保持有效。
   const std::uint64_t token =
       operations_.track(UringOp::kRead, request->getFd(), request);
   io_uring_prep_read(sqe, request->getFd(), buffer, length, 0);
@@ -206,7 +207,7 @@ void IoUring::submitWrite(httpserver::ChannelPtr request, const void* buffer,
     return;
   }
 
-  // buffer 指向 HttpData 尚未 retrieve 的输出数据；完成前不能移动读指针。
+  // buffer 指向尚未消费的输出数据；完成前不能移动读指针。
   const std::uint64_t token =
       operations_.track(UringOp::kWrite, request->getFd(), request);
   io_uring_prep_write(sqe, request->getFd(), buffer, length, 0);
@@ -258,7 +259,7 @@ void IoUring::processEvents() {
 
       const httpserver::ChannelPtr& channel = operation->channel;
       // 关闭流程会先让 Channel 失活。旧 read/write/poll CQE 到达时只释放
-      // 操作记录，不再进入 HttpData 回调。
+      // 操作记录，不再进入连接回调。
       if (!channel || !channel->isActive() ||
           channel->getFd() != operation->fd) {
         continue;
@@ -294,12 +295,14 @@ void IoUring::processEvents() {
   }
 }
 
-void IoUring::add_timer(httpserver::ChannelPtr request, int timeout) {
-  const std::shared_ptr<HttpData> holder = request->getHolder();
-  if (holder) {
-    timerManager_.addTimer(holder, timeout);
+void IoUring::addTimer(httpserver::ChannelPtr channel, int timeout) {
+  const auto timeoutHandler = channel->getTimeoutHandler();
+  if (timeoutHandler) {
+    channel->clearTimer();
+    const auto timer = timerManager_.addTimer(timeoutHandler, timeout);
+    channel->setTimerCancellation([timer] { timer->cancel(); });
   } else {
-    LOG << "timer add failed: Channel has no HttpData holder";
+    LOG << "timer add failed: Channel has no timeout handler";
   }
 }
 

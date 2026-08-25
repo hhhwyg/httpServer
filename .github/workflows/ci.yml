@@ -22,7 +22,8 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build g++ liburing-dev libssl-dev default-libmysqlclient-dev
+          sudo apt-get install -y cmake ninja-build g++ clang-format clang-tidy \
+            liburing-dev libssl-dev default-libmysqlclient-dev
       - name: Configure
         run: cmake --preset ${{ matrix.preset }}
       - name: Build
@@ -38,3 +39,22 @@ jobs:
           fetch-depth: 2
       - name: Check whitespace errors
         run: git diff --check HEAD^ HEAD
+      - name: Check changed C++ formatting
+        run: |
+          if git diff --name-only HEAD^ HEAD -- '*.cpp' '*.h' | grep -q .; then
+            diff=$(git clang-format --diff --binary clang-format HEAD^ HEAD)
+            test -z "$diff"
+          fi
+      - name: Configure compile database for clang-tidy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++ clang-format clang-tidy \
+            liburing-dev libssl-dev \
+            default-libmysqlclient-dev
+          cmake --preset debug
+      - name: Check changed C++ with clang-tidy
+        run: |
+          files=$(git diff --name-only HEAD^ HEAD -- '*.cpp')
+          if [ -n "$files" ]; then
+            clang-tidy -p build/debug $files
+          fi

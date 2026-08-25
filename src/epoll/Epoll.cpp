@@ -26,62 +26,63 @@ Epoll::~Epoll() {
   }
 }
 
-void Epoll::epoll_add(httpserver::ChannelPtr request, int timeout) {
-  if (!request || request->getFd() < 0) {
+void Epoll::add(httpserver::ChannelPtr channel, int timeout) {
+  if (!channel || channel->getFd() < 0) {
     return;
   }
 
-  request->activate();
-  request->EqualAndUpdateLastEvents();
-  channels_[request.get()] = request;
-  if (const std::shared_ptr<HttpData> holder = request->getHolder()) {
-    connectionOwners_[request.get()] = holder;
+  channel->activate();
+  channel->EqualAndUpdateLastEvents();
+  channels_[channel.get()] = channel;
+  if (const std::shared_ptr<void> owner = channel->lockOwner()) {
+    connectionOwners_[channel.get()] = owner;
   }
   if (timeout > 0) {
-    add_timer(request, timeout);
+    addTimer(channel, timeout);
   }
 
   epoll_event event{};
-  event.data.ptr = request.get();
-  event.events = request->getEvents();
-  if (epoll_ctl(epollFd_, EPOLL_CTL_ADD, request->getFd(), &event) < 0) {
-    LOG << "epoll add failed for fd=" << request->getFd() << ": "
+  event.data.ptr = channel.get();
+  event.events = channel->getEvents();
+  if (epoll_ctl(epollFd_, EPOLL_CTL_ADD, channel->getFd(), &event) < 0) {
+    LOG << "epoll add failed for fd=" << channel->getFd() << ": "
         << std::strerror(errno);
-    connectionOwners_.erase(request.get());
-    channels_.erase(request.get());
-    request->deactivate();
+    connectionOwners_.erase(channel.get());
+    channels_.erase(channel.get());
+    channel->deactivate();
   }
 }
 
-void Epoll::epoll_mod(httpserver::ChannelPtr request, int timeout) {
-  if (!request || !request->isActive()) {
+void Epoll::modify(httpserver::ChannelPtr channel, int timeout) {
+  if (!channel || !channel->isActive()) {
     return;
   }
   if (timeout > 0) {
-    add_timer(request, timeout);
+    addTimer(channel, timeout);
   }
-  if (request->EqualAndUpdateLastEvents()) {
+  if (channel->EqualAndUpdateLastEvents()) {
     return;
   }
 
   epoll_event event{};
-  event.data.ptr = request.get();
-  event.events = request->getEvents();
-  if (epoll_ctl(epollFd_, EPOLL_CTL_MOD, request->getFd(), &event) < 0) {
-    LOG << "epoll mod failed for fd=" << request->getFd() << ": "
+  event.data.ptr = channel.get();
+  event.events = channel->getEvents();
+  if (epoll_ctl(epollFd_, EPOLL_CTL_MOD, channel->getFd(), &event) < 0) {
+    LOG << "epoll mod failed for fd=" << channel->getFd() << ": "
         << std::strerror(errno);
   }
 }
 
-void Epoll::epoll_del(httpserver::ChannelPtr request) {
-  if (!request) {
+void Epoll::remove(httpserver::ChannelPtr channel) {
+  if (!channel) {
     return;
   }
 
-  const int fd = request->getFd();
-  request->deactivate();
-  connectionOwners_.erase(request.get());
-  channels_.erase(request.get());
+  const int fd = channel->getFd();
+  channel->deactivate();
+  channel->clearTimer();
+  connectionOwners_.erase(channel.get());
+  channels_.erase(channel.get());
   if (fd >= 0 && epoll_ctl(epollFd_, EPOLL_CTL_DEL, fd, nullptr) < 0 &&
       errno != ENOENT && errno != EBADF) {
     LOG << "epoll del failed for fd=" << fd << ": " << std::strerror(errno);
@@ -156,12 +157,14 @@ std::vector<httpserver::ChannelPtr> Epoll::getEventsRequest(int eventsNum) {
   return requests;
 }
 
-void Epoll::add_timer(httpserver::ChannelPtr requestData, int timeout) {
-  const std::shared_ptr<HttpData> holder = requestData->getHolder();
-  if (holder) {
-    timerManager_.addTimer(holder, timeout);
+void Epoll::addTimer(httpserver::ChannelPtr channel, int timeout) {
+  const auto timeoutHandler = channel->getTimeoutHandler();
+  if (timeoutHandler) {
+    channel->clearTimer();
+    const auto timer = timerManager_.addTimer(timeoutHandler, timeout);
+    channel->setTimerCancellation([timer] { timer->cancel(); });
   } else {
-    LOG << "timer add failed: Channel has no HttpData holder";
+    LOG << "timer add failed: Channel has no timeout handler";
   }
 }
 

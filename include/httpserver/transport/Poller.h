@@ -23,9 +23,9 @@ class Poller {
  public:
   virtual ~Poller() = default;
 
-  virtual void epoll_add(ChannelPtr request, int timeout) = 0;
-  virtual void epoll_mod(ChannelPtr request, int timeout) = 0;
-  virtual void epoll_del(ChannelPtr request) = 0;
+  virtual void add(ChannelPtr channel, int timeout) = 0;
+  virtual void modify(ChannelPtr channel, int timeout) = 0;
+  virtual void remove(ChannelPtr channel) = 0;
   virtual void submitRead(ChannelPtr request, void* buffer,
                           std::size_t length) = 0;
   virtual void submitWrite(ChannelPtr request, const void* buffer,
