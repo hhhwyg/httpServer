@@ -1,11 +1,12 @@
 #include "RoomController.h"
+#include "httpdata/HttpData.h"
 #include "json.hpp"
 #include "ChatManager.h"
 #include "ChatRoom.h"
 
 using json = nlohmann::json;
 
-namespace RoomController {
+namespace httpserver::RoomController {
 
 void handleCreateRoom(std::shared_ptr<HttpData> httpData) {
     json root;
@@ -52,4 +53,4 @@ void handleGetRoomList(std::shared_ptr<HttpData> httpData) {
     httpData->sendResponse(200, "application/json", resp.dump());
 }
 
-} // namespace RoomController
+} // namespace httpserver::RoomController

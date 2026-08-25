@@ -9,12 +9,13 @@
 #include <cstdint>
 #include "base/ChainBuffer.h"
 #include "Timer.h"
+#include "httpserver/transport/Channel.h"
+#include "httpserver/protocol/StaticFile.h"
 
 
 
 class EventLoop;
 class TimerNode;
-class Channel;
 
 enum ProcessState {
   STATE_PARSE_URI = 1,
@@ -70,7 +71,7 @@ class HttpData : public std::enable_shared_from_this<HttpData> {
   void linkTimer(std::shared_ptr<TimerNode> mtimer) {
     timer_ = mtimer;
   }
-  std::shared_ptr<Channel> getChannel() { return channel_; }
+  httpserver::ChannelPtr getChannel() { return channel_; }
   EventLoop *getLoop() { return loop_; }
   void handleClose();
   void newEvent();
@@ -85,7 +86,8 @@ class HttpData : public std::enable_shared_from_this<HttpData> {
    
   private:
   EventLoop *loop_;
-  std::shared_ptr<Channel> channel_;
+  httpserver::ChannelPtr channel_;
+  httpserver::StaticFileService staticFileService_;
   int fd_;
   ChainBuffer inBuffer_;
   ChainBuffer outBuffer_;
@@ -127,11 +129,8 @@ class HttpData : public std::enable_shared_from_this<HttpData> {
   void handleError(int fd, int err_num, std::string short_msg);
   void handleWebSocketFrame();
   void closeWebSocket(std::uint16_t code, const std::string& reason = {});
-  bool authenticatedRequest() const;
   void handleWriteInLoop(const std::string& msg);
   AnalysisState handleStaticFile();
-  std::string getQueryParam(const std::string& key) const;
-
   URIState parseURI();
   HeaderState parseHeaders();
   AnalysisState analysisRequest();

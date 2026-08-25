@@ -1,17 +1,17 @@
 #include <getopt.h>
 #include <string>
 #include"SqlConnPool.h"
-#include "config/ServerConfig.h"
+#include "httpserver/config/ServerConfig.h"
 #include "EventLoop.h"
 #include "Server.h"
-#include "base/Logging.h"
+#include "httpserver/base/Logging.h"
 #include "CryptoUtil.h"
 
 int main(int argc, char* argv[]) {
   int threadNum = 6;
   int port = 8088;
   std::string logPath = "./WebServer.log";
-  PollerBackend backend = PollerBackend::kIoUring;
+  httpserver::PollerBackend backend = httpserver::PollerBackend::kIoUring;
 
   // parse args
   int opt;
@@ -35,7 +35,7 @@ int main(int argc, char* argv[]) {
         break;
       }
       case 'b': {
-        const auto parsedBackend = ParsePollerBackend(optarg);
+        const auto parsedBackend = httpserver::ParsePollerBackend(optarg);
         if (!parsedBackend.has_value()) {
           printf("backend must be epoll or uring\n");
           return 1;
@@ -47,8 +47,9 @@ int main(int argc, char* argv[]) {
         break;
     }
   }
-  Logger::setLogFileName(logPath);
-  const ServerConfig config = ServerConfig::LoadFromEnvironment();
+  httpserver::Logger::setLogFileName(logPath);
+  const httpserver::ServerConfig config =
+      httpserver::ServerConfig::LoadFromEnvironment();
   if (!config.valid()) {
     for (const std::string& error : config.errors()) {
       fprintf(stderr, "Configuration error: %s\n", error.c_str());
@@ -56,8 +57,8 @@ int main(int argc, char* argv[]) {
     return 1;
   }
   CryptoUtil::configureJwt(config.jwt);
-  const PollerConfig pollerConfig{config.limits.maxFds,
-                                  config.limits.ioUringQueueSize};
+  const httpserver::PollerConfig pollerConfig{config.limits.maxFds,
+                                              config.limits.ioUringQueueSize};
 // STL库在多线程上应用
 #ifndef _PTHREADS
   LOG << "_PTHREADS is not defined !";
@@ -76,7 +77,8 @@ int main(int argc, char* argv[]) {
   if (!config.jwt.enabled()) {
     LOG << "JWT authentication is disabled because HTTPSERVER_JWT_SECRET is unset";
   }
-  LOG << "Starting server with " << PollerBackendName(backend) << " backend";
+  LOG << "Starting server with " << httpserver::PollerBackendName(backend)
+      << " backend";
   EventLoop mainLoop(backend, pollerConfig);  // 主线程只负责接收 socket 连接
   Server myHTTPServer(&mainLoop, threadNum, port, backend, pollerConfig);
   myHTTPServer.start();

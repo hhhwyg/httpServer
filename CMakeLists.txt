@@ -13,6 +13,9 @@ set(HTTPSERVER_SANITIZER "" CACHE STRING
 set(HTTPSERVER_CORE_SOURCES
     src/IoUring.cpp
     src/Poller.cpp
+    src/application/Authentication.cpp
+    src/application/ApplicationRouter.cpp
+    src/application/ChatApplication.cpp
     src/config/ServerConfig.cpp
     src/base/AsyncLogging.cpp
     src/base/CountDownLatch.cpp
@@ -31,10 +34,12 @@ set(HTTPSERVER_CORE_SOURCES
     src/eventloop/EventLoopThread.cpp
     src/eventloop/EventLoopThreadPool.cpp
     src/httpdata/HttpData.cpp
+    src/httpdata/HttpRequest.cpp
     src/httpdata/MimeType.cpp
+    src/httpdata/StaticFile.cpp
+    src/httpdata/WebSocket.cpp
     src/server/Server.cpp
     src/sql/SqlConnPool.cpp
-    src/thread/ThreadPool.cpp
     src/timer/Timer.cpp
     src/util/CryptoUtil.cpp
     src/util/Util.cpp
@@ -47,8 +52,8 @@ find_library(MYSQL_LIBRARY NAMES mysqlclient mariadb REQUIRED)
 find_path(URING_INCLUDE_DIR NAMES liburing.h REQUIRED)
 find_library(URING_LIBRARY NAMES uring REQUIRED)
 
-# Legacy headers still use short cross-module includes such as "Channel.h".
-# Keep the compatibility include list private until the Phase 4 module split.
+# Implementation-only headers still use short cross-module includes such as
+# "EventLoop.h". Keep those source directories private to the core target.
 set(HTTPSERVER_LEGACY_INCLUDE_DIRS
     ${PROJECT_SOURCE_DIR}/src/base
     ${PROJECT_SOURCE_DIR}/src/channel
@@ -59,7 +64,6 @@ set(HTTPSERVER_LEGACY_INCLUDE_DIRS
     ${PROJECT_SOURCE_DIR}/src/httpdata
     ${PROJECT_SOURCE_DIR}/src/server
     ${PROJECT_SOURCE_DIR}/src/sql
-    ${PROJECT_SOURCE_DIR}/src/thread
     ${PROJECT_SOURCE_DIR}/src/timer
     ${PROJECT_SOURCE_DIR}/src/util
 )
@@ -92,9 +96,10 @@ add_library(httpserver_core STATIC ${HTTPSERVER_CORE_SOURCES})
 add_library(httpserver::core ALIAS httpserver_core)
 target_include_directories(httpserver_core
     PUBLIC
+        ${PROJECT_SOURCE_DIR}/include
+    PRIVATE
         ${PROJECT_SOURCE_DIR}/src
         ${PROJECT_SOURCE_DIR}/third_party
-    PRIVATE
         ${HTTPSERVER_LEGACY_INCLUDE_DIRS}
         ${MYSQL_INCLUDE_DIR}
         ${URING_INCLUDE_DIR}
@@ -111,7 +116,10 @@ target_link_libraries(httpserver_core
 )
 
 add_executable(WebServer src/Main.cpp)
-target_include_directories(WebServer PRIVATE ${HTTPSERVER_LEGACY_INCLUDE_DIRS})
+target_include_directories(WebServer PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+    ${HTTPSERVER_LEGACY_INCLUDE_DIRS}
+)
 target_link_libraries(WebServer PRIVATE httpserver::core)
 
 if(BUILD_TESTING)

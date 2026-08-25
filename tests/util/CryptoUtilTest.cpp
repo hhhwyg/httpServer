@@ -2,11 +2,12 @@
 #include <string>
 
 #include "CryptoUtil.h"
+#include "httpserver/application/Authentication.h"
 
 namespace {
 
-JwtConfig testJwtConfig() {
-  JwtConfig config;
+httpserver::JwtConfig testJwtConfig() {
+  httpserver::JwtConfig config;
   config.secret = "0123456789abcdef0123456789abcdef0123456789abcdef";
   config.issuer = "httpserver-test";
   config.ttlSeconds = 60;
@@ -27,11 +28,21 @@ void testJwtValidation() {
   assert(subject.has_value());
   assert(*subject == "alice");
 
+  const httpserver::HeaderMap headers{{"authorization", "Bearer " + token}};
+  const auto requestSubject =
+      httpserver::Authenticator::VerifyRequest("", headers);
+  assert(requestSubject.has_value());
+  assert(*requestSubject == "alice");
+  const auto querySubject =
+      httpserver::Authenticator::VerifyQuery("token=" + token);
+  assert(querySubject.has_value());
+  assert(*querySubject == "alice");
+
   std::string tampered = token;
   tampered.back() = tampered.back() == 'a' ? 'b' : 'a';
   assert(!CryptoUtil::verifyJWT(tampered));
 
-  JwtConfig expiredConfig = testJwtConfig();
+  httpserver::JwtConfig expiredConfig = testJwtConfig();
   expiredConfig.ttlSeconds = -1;
   CryptoUtil::configureJwt(expiredConfig);
   assert(!CryptoUtil::verifyJWT(CryptoUtil::generateJWT("alice")));

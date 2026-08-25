@@ -1,7 +1,6 @@
 
 // This file has not been used
 #pragma once
-#include "Channel.h"
 #include <pthread.h>
 #include <functional>
 #include <memory>

@@ -3,11 +3,11 @@
 #include <optional>
 #include <string>
 
-#include "config/ServerConfig.h"
+#include "httpserver/config/ServerConfig.h"
 
 namespace CryptoUtil {
 
-void configureJwt(JwtConfig config);
+void configureJwt(httpserver::JwtConfig config);
 bool jwtEnabled();
 std::string generateJWT(const std::string& username);
 bool verifyJWT(const std::string& token);

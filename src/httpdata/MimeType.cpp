@@ -1,16 +1,21 @@
-#include "MimeType.h"
+#include "httpserver/protocol/MimeType.h"
 
-pthread_once_t MimeType::once_control = PTHREAD_ONCE_INIT;
-std::unordered_map<std::string, std::string> MimeType::mime;
+#include <pthread.h>
+#include <unordered_map>
 
-void MimeType::init() {
+namespace {
+
+pthread_once_t onceControl = PTHREAD_ONCE_INIT;
+std::unordered_map<std::string, std::string> mime;
+
+void initializeMimeTypes() {
   mime[".html"] = "text/html";
   mime[".avi"] = "video/x-msvideo";
   mime[".bmp"] = "image/bmp";
   mime[".c"] = "text/plain";
-  mime[".css"] = "text/css";              
-  mime[".js"] = "application/javascript"; 
-  mime[".json"] = "application/json";     
+  mime[".css"] = "text/css";
+  mime[".js"] = "application/javascript";
+  mime[".json"] = "application/json";
   mime[".doc"] = "application/msword";
   mime[".gif"] = "image/gif";
   mime[".gz"] = "application/x-gzip";
@@ -23,10 +28,14 @@ void MimeType::init() {
   mime["default"] = "text/html";
 }
 
-std::string MimeType::getMime(const std::string &suffix) {
-  pthread_once(&once_control, MimeType::init);
-  if (mime.find(suffix) == mime.end())
-    return mime["default"];
-  else
-    return mime[suffix];
+}  // namespace
+
+namespace httpserver {
+
+std::string MimeType::getMime(std::string_view suffix) {
+  pthread_once(&onceControl, initializeMimeTypes);
+  const auto it = mime.find(std::string(suffix));
+  return it == mime.end() ? mime["default"] : it->second;
 }
+
+}  // namespace httpserver

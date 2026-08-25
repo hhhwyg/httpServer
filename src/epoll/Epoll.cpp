@@ -5,7 +5,7 @@
 #include <cstring>
 #include <unistd.h>
 
-#include "base/Logging.h"
+#include "httpserver/base/Logging.h"
 
 namespace {
 
@@ -14,7 +14,7 @@ constexpr int kEpollWaitTimeMs = 10000;
 
 }  // namespace
 
-Epoll::Epoll(const PollerConfig& config)
+Epoll::Epoll(const httpserver::PollerConfig& config)
     : epollFd_(epoll_create1(EPOLL_CLOEXEC)), events_(kEventsNum) {
   (void)config;
   assert(epollFd_ >= 0);
@@ -26,7 +26,7 @@ Epoll::~Epoll() {
   }
 }
 
-void Epoll::epoll_add(SP_Channel request, int timeout) {
+void Epoll::epoll_add(httpserver::ChannelPtr request, int timeout) {
   if (!request || request->getFd() < 0) {
     return;
   }
@@ -53,7 +53,7 @@ void Epoll::epoll_add(SP_Channel request, int timeout) {
   }
 }
 
-void Epoll::epoll_mod(SP_Channel request, int timeout) {
+void Epoll::epoll_mod(httpserver::ChannelPtr request, int timeout) {
   if (!request || !request->isActive()) {
     return;
   }
@@ -73,7 +73,7 @@ void Epoll::epoll_mod(SP_Channel request, int timeout) {
   }
 }
 
-void Epoll::epoll_del(SP_Channel request) {
+void Epoll::epoll_del(httpserver::ChannelPtr request) {
   if (!request) {
     return;
   }
@@ -88,7 +88,8 @@ void Epoll::epoll_del(SP_Channel request) {
   }
 }
 
-void Epoll::submitRead(SP_Channel request, void* buffer, std::size_t length) {
+void Epoll::submitRead(httpserver::ChannelPtr request, void* buffer,
+                       std::size_t length) {
   if (!request || !request->isActive() || !buffer || length == 0) {
     return;
   }
@@ -97,7 +98,7 @@ void Epoll::submitRead(SP_Channel request, void* buffer, std::size_t length) {
   request->handleReadComplete(result < 0 ? -errno : static_cast<int>(result));
 }
 
-void Epoll::submitWrite(SP_Channel request, const void* buffer,
+void Epoll::submitWrite(httpserver::ChannelPtr request, const void* buffer,
                         std::size_t length) {
   if (!request || !request->isActive() || !buffer || length == 0) {
     return;
@@ -108,15 +109,15 @@ void Epoll::submitWrite(SP_Channel request, const void* buffer,
 }
 
 void Epoll::processEvents() {
-  const std::vector<SP_Channel> requests = poll();
-  for (const SP_Channel& request : requests) {
+  const std::vector<httpserver::ChannelPtr> requests = poll();
+  for (const httpserver::ChannelPtr& request : requests) {
     if (request && request->isActive()) {
       request->handleEvents();
     }
   }
 }
 
-std::vector<SP_Channel> Epoll::poll() {
+std::vector<httpserver::ChannelPtr> Epoll::poll() {
   int eventCount = 0;
   do {
     eventCount = epoll_wait(epollFd_, events_.data(),
@@ -131,19 +132,20 @@ std::vector<SP_Channel> Epoll::poll() {
   return getEventsRequest(eventCount);
 }
 
-std::vector<SP_Channel> Epoll::getEventsRequest(int eventsNum) {
-  std::vector<SP_Channel> requests;
+std::vector<httpserver::ChannelPtr> Epoll::getEventsRequest(int eventsNum) {
+  std::vector<httpserver::ChannelPtr> requests;
   requests.reserve(eventsNum);
   for (int index = 0; index < eventsNum; ++index) {
     // A stale event is looked up but never dereferenced before the lookup,
     // so it cannot be redirected after the kernel reuses a numeric fd.
-    Channel* const rawChannel = static_cast<Channel*>(events_[index].data.ptr);
+    auto* const rawChannel =
+        static_cast<httpserver::Channel*>(events_[index].data.ptr);
     const auto channelIt = channels_.find(rawChannel);
     if (channelIt == channels_.end()) {
       continue;
     }
 
-    const SP_Channel& request = channelIt->second;
+    const httpserver::ChannelPtr& request = channelIt->second;
     if (!request || !request->isActive()) {
       continue;
     }
@@ -154,7 +156,7 @@ std::vector<SP_Channel> Epoll::getEventsRequest(int eventsNum) {
   return requests;
 }
 
-void Epoll::add_timer(SP_Channel requestData, int timeout) {
+void Epoll::add_timer(httpserver::ChannelPtr requestData, int timeout) {
   const std::shared_ptr<HttpData> holder = requestData->getHolder();
   if (holder) {
     timerManager_.addTimer(holder, timeout);

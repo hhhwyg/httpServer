@@ -1,7 +1,7 @@
 #include <cassert>
 #include <cstdlib>
 
-#include "config/ServerConfig.h"
+#include "httpserver/config/ServerConfig.h"
 
 namespace {
 
@@ -21,7 +21,8 @@ void clearEnvironment() {
 
 void testDefaultsDisableSensitiveFeatures() {
   clearEnvironment();
-  const ServerConfig config = ServerConfig::LoadFromEnvironment();
+  const httpserver::ServerConfig config =
+      httpserver::ServerConfig::LoadFromEnvironment();
   assert(config.valid());
   assert(!config.jwt.enabled());
   assert(!config.database.enabled());
@@ -31,7 +32,8 @@ void testInvalidConfigurationIsRejected() {
   clearEnvironment();
   setenv("HTTPSERVER_JWT_SECRET", "too-short", 1);
   setenv("HTTPSERVER_DB_USER", "httpserver", 1);
-  const ServerConfig config = ServerConfig::LoadFromEnvironment();
+  const httpserver::ServerConfig config =
+      httpserver::ServerConfig::LoadFromEnvironment();
   assert(!config.valid());
 }
 
@@ -46,7 +48,8 @@ void testCompleteConfigurationIsAccepted() {
   setenv("HTTPSERVER_DB_POOL_SIZE", "2", 1);
   setenv("HTTPSERVER_MAX_FDS", "20000", 1);
   setenv("HTTPSERVER_IO_URING_QUEUE_SIZE", "1024", 1);
-  const ServerConfig config = ServerConfig::LoadFromEnvironment();
+  const httpserver::ServerConfig config =
+      httpserver::ServerConfig::LoadFromEnvironment();
   assert(config.valid());
   assert(config.jwt.enabled());
   assert(config.database.enabled());

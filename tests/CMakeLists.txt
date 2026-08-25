@@ -44,6 +44,41 @@ target_link_libraries(HttpDataLifecycleTest PRIVATE httpserver::core)
 add_test(NAME httpdata.lifecycle COMMAND HttpDataLifecycleTest)
 set_tests_properties(httpdata.lifecycle PROPERTIES LABELS "unit;lifecycle")
 
+add_executable(MimeTypeTest httpdata/MimeTypeTest.cpp)
+target_include_directories(MimeTypeTest PRIVATE ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(MimeTypeTest PRIVATE httpserver::core)
+add_test(NAME httpdata.mime_type COMMAND MimeTypeTest)
+set_tests_properties(httpdata.mime_type PROPERTIES LABELS "unit;protocol")
+
+add_executable(HttpRequestParserTest httpdata/HttpRequestParserTest.cpp)
+target_include_directories(HttpRequestParserTest PRIVATE ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(HttpRequestParserTest PRIVATE httpserver::core)
+add_test(NAME httpdata.request_parser COMMAND HttpRequestParserTest)
+set_tests_properties(httpdata.request_parser PROPERTIES LABELS "unit;protocol")
+
+add_executable(StaticFileServiceTest httpdata/StaticFileServiceTest.cpp)
+target_include_directories(StaticFileServiceTest PRIVATE ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(StaticFileServiceTest PRIVATE httpserver::core)
+add_test(NAME httpdata.static_file COMMAND StaticFileServiceTest)
+set_tests_properties(httpdata.static_file PROPERTIES
+    LABELS "unit;protocol"
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+)
+
+add_executable(WebSocketCodecTest httpdata/WebSocketCodecTest.cpp)
+target_include_directories(WebSocketCodecTest PRIVATE ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(WebSocketCodecTest PRIVATE httpserver::core)
+add_test(NAME httpdata.websocket_codec COMMAND WebSocketCodecTest)
+set_tests_properties(httpdata.websocket_codec PROPERTIES LABELS "unit;protocol")
+
+add_executable(ApplicationBoundaryTest application/ApplicationBoundaryTest.cpp)
+target_include_directories(ApplicationBoundaryTest PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+)
+target_link_libraries(ApplicationBoundaryTest PRIVATE httpserver::core)
+add_test(NAME application.boundary COMMAND ApplicationBoundaryTest)
+set_tests_properties(application.boundary PROPERTIES LABELS "unit;application")
+
 add_executable(ChatRoomTest chat/ChatRoomTest.cpp)
 target_include_directories(ChatRoomTest PRIVATE
     ${PROJECT_SOURCE_DIR}/src

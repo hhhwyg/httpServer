@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+namespace httpserver {
+
 struct JwtConfig {
   std::string secret;
   std::string issuer = "httpServer";
@@ -29,8 +31,6 @@ struct ServerLimits {
   unsigned ioUringQueueSize = 4096;
 };
 
-// Process configuration is read once at startup. Secrets are intentionally
-// supplied only through environment variables and are never logged.
 class ServerConfig {
  public:
   static ServerConfig LoadFromEnvironment();
@@ -45,3 +45,5 @@ class ServerConfig {
  private:
   std::vector<std::string> validationErrors;
 };
+
+}  // namespace httpserver

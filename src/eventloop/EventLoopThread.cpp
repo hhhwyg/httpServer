@@ -1,12 +1,13 @@
 #include "EventLoopThread.h"
 #include <functional>
 
-EventLoopThread::EventLoopThread(PollerBackend backend, PollerConfig config)
+EventLoopThread::EventLoopThread(httpserver::PollerBackend backend,
+                                 httpserver::PollerConfig config)
     : loop_(NULL),
       backend_(backend),
       config_(config),
       exiting_(false),
-      thread_(bind(&EventLoopThread::threadFunc, this), "EventLoopThread"),
+      thread_(std::bind(&EventLoopThread::threadFunc, this), "EventLoopThread"),
       mutex_(),
       cond_(mutex_) {}
 

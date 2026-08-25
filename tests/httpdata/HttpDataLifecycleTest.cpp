@@ -5,7 +5,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include "channel/Channel.h"
+#include "httpserver/transport/Channel.h"
 #include "httpdata/HttpData.h"
 
 namespace {
@@ -19,7 +19,7 @@ void testHandlersDoNotCreateOwnershipCycle() {
   int sockets[2];
   makeSocketPair(sockets);
 
-  std::shared_ptr<Channel> channel;
+  std::shared_ptr<httpserver::Channel> channel;
   std::weak_ptr<HttpData> weakConnection;
   {
     auto connection = std::make_shared<HttpData>(nullptr, sockets[0]);

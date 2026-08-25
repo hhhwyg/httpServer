@@ -1,7 +1,8 @@
 #include "EventLoopThreadPool.h"
 
 EventLoopThreadPool::EventLoopThreadPool(EventLoop *baseLoop, int numThreads,
-                                         PollerBackend backend, PollerConfig config)
+                                         httpserver::PollerBackend backend,
+                                         httpserver::PollerConfig config)
     : baseLoop_(baseLoop),
       started_(false),
       numThreads_(numThreads),

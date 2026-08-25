@@ -1,49 +1,25 @@
-#include <vector>
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
-#include <filesystem>
-#include <fcntl.h>
-#include <fstream>
-#include <limits>
-#include <optional>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <sys/uio.h>
-#include <iostream>
-#include <openssl/sha.h>
-#include <openssl/bio.h>
-#include <openssl/evp.h>
-#include <openssl/hmac.h>
-#include <openssl/buffer.h>
-#include <set>
-#include <mutex>
+#include <functional>
 #include <string_view>
 #include "HttpData.h"
-#include "Channel.h"
 #include "EventLoop.h"
 #include "Util.h"
 #include "time.h"
-#include"IoUring.h"
-#include "SqlConnPool.h"
-#include"json.hpp"
-#include"ChatRoom.h"
-#include"ChatManager.h"
-#include "UserController.h"
-#include "RoomController.h"
 #include "CryptoUtil.h"
-#include "MimeType.h"
-using json = nlohmann::json;
-
+#include "httpserver/application/Authentication.h"
+#include "httpserver/application/ApplicationRouter.h"
+#include "httpserver/application/ChatApplication.h"
+#include "httpserver/protocol/HttpRequest.h"
+#include "httpserver/protocol/WebSocket.h"
 const __uint32_t DEFAULT_EVENT = EPOLLIN | EPOLLET | EPOLLONESHOT;
 const int DEFAULT_EXPIRED_TIME = 2000;              // ms
 const int DEFAULT_KEEP_ALIVE_TIME = 5 * 60 * 1000;  // ms
 constexpr std::size_t kMaxRequestLineBytes = 8192;
 constexpr std::size_t kMaxHeaderBytes = 16384;
-constexpr std::size_t kMaxHeaderCount = 100;
 constexpr std::size_t kMaxBodyBytes = 1024 * 1024;
 constexpr std::size_t kMaxWebSocketPayloadBytes = 1024 * 1024;
-constexpr std::size_t kMaxStaticFileBytes = 8 * 1024 * 1024;
 
 namespace {
 
@@ -52,19 +28,6 @@ std::string toLower(std::string value) {
     return static_cast<char>(std::tolower(c));
   });
   return value;
-}
-
-std::optional<std::size_t> parseUnsignedSize(const std::string& value,
-                                             std::size_t maximum) {
-  if (value.empty()) return std::nullopt;
-  std::size_t result = 0;
-  for (const unsigned char c : value) {
-    if (!std::isdigit(c) || result > (maximum - (c - '0')) / 10) {
-      return std::nullopt;
-    }
-    result = result * 10 + (c - '0');
-  }
-  return result <= maximum ? std::optional<std::size_t>(result) : std::nullopt;
 }
 
 bool hasPathTraversal(const std::string& path) {
@@ -81,34 +44,6 @@ bool hasPathTraversal(const std::string& path) {
     begin = end + 1;
   }
   return false;
-}
-
-std::string webSocketFrame(unsigned char opcode, const std::string& payload) {
-  std::string frame;
-  frame.push_back(static_cast<char>(0x80 | opcode));
-  if (payload.size() <= 125) {
-    frame.push_back(static_cast<char>(payload.size()));
-  } else if (payload.size() <= std::numeric_limits<std::uint16_t>::max()) {
-    frame.push_back(126);
-    frame.push_back(static_cast<char>((payload.size() >> 8) & 0xff));
-    frame.push_back(static_cast<char>(payload.size() & 0xff));
-  } else {
-    return {};
-  }
-  frame.append(payload);
-  return frame;
-}
-
-bool isWithinDirectory(const std::filesystem::path& root,
-                       const std::filesystem::path& candidate) {
-  auto rootPart = root.begin();
-  auto candidatePart = candidate.begin();
-  while (rootPart != root.end() && candidatePart != candidate.end()) {
-    if (*rootPart != *candidatePart) return false;
-    ++rootPart;
-    ++candidatePart;
-  }
-  return rootPart == root.end();
 }
 
 }  // namespace
@@ -219,7 +154,8 @@ void HttpData::sendMsg(const std::string& msg) {
     
     // 2. 将任务丢进所属 Loop 的队列，确保线程安全
     loop_->runInLoop([self, msg]() {
-        self->handleWriteInLoop(webSocketFrame(0x1, msg));
+        self->handleWriteInLoop(
+            httpserver::WebSocketCodec::EncodeFrame(0x1, msg));
     });
 }
 
@@ -231,7 +167,7 @@ void HttpData::closeWebSocket(std::uint16_t code, const std::string& reason) {
   payload.append(reason.substr(0, 123));
   closeAfterWrite_ = true;
   connectionState_ = H_DISCONNECTING;
-  handleWriteInLoop(webSocketFrame(0x8, payload));
+  handleWriteInLoop(httpserver::WebSocketCodec::EncodeFrame(0x8, payload));
 }
 
  ProcessState HttpData::getRequestStatus(){
@@ -247,7 +183,7 @@ void HttpData::closeWebSocket(std::uint16_t code, const std::string& reason) {
 
 HttpData::HttpData(EventLoop *loop, int connfd)
     : loop_(loop),
-      channel_(new Channel(loop, connfd)),
+      channel_(new httpserver::Channel(loop, connfd)),
       fd_(connfd),
       error_(false),
       closed_(false),
@@ -474,50 +410,20 @@ void HttpData::handleWebSocketFrame() {
     const std::string input = inBuffer_.peekAllAsString();
     if (input.size() < 2) return;
 
-    const auto* data = reinterpret_cast<const unsigned char*>(input.data());
-    const bool fin = (data[0] & 0x80) != 0;
-    const unsigned char opcode = data[0] & 0x0f;
-    const bool masked = (data[1] & 0x80) != 0;
-    std::uint64_t payloadLength = data[1] & 0x7f;
-    std::size_t headerLength = 2;
-
-    if ((data[0] & 0x70) != 0 || !masked) {
-      closeWebSocket(1002, "protocol error");
+    const auto decoded = httpserver::WebSocketCodec::DecodeFrame(input);
+    if (decoded.status ==
+        httpserver::WebSocketDecodeStatus::kNeedMoreData) {
       return;
     }
-    if (payloadLength == 126) {
-      if (input.size() < 4) return;
-      payloadLength = (static_cast<std::uint64_t>(data[2]) << 8) | data[3];
-      headerLength = 4;
-    } else if (payloadLength == 127) {
-      if (input.size() < 10) return;
-      if ((data[2] & 0x80) != 0) {
-        closeWebSocket(1002, "invalid length");
-        return;
-      }
-      payloadLength = 0;
-      for (int index = 0; index < 8; ++index) {
-        payloadLength = (payloadLength << 8) | data[2 + index];
-      }
-      headerLength = 10;
-    }
-
-    const bool control = opcode >= 0x8;
-    if ((control && (!fin || payloadLength > 125)) ||
-        payloadLength > kMaxWebSocketPayloadBytes) {
-      closeWebSocket(1002, "invalid frame");
+    if (decoded.status == httpserver::WebSocketDecodeStatus::kProtocolError) {
+      closeWebSocket(decoded.closeCode, decoded.errorReason);
       return;
     }
-    const std::uint64_t frameLength = headerLength + 4 + payloadLength;
-    if (input.size() < frameLength) return;
 
-    const unsigned char* mask = data + headerLength;
-    const unsigned char* body = mask + 4;
-    std::string payload(static_cast<std::size_t>(payloadLength), '\0');
-    for (std::size_t index = 0; index < payload.size(); ++index) {
-      payload[index] = static_cast<char>(body[index] ^ mask[index % 4]);
-    }
-    inBuffer_.retrieve(static_cast<int>(frameLength));
+    const bool fin = decoded.frame.fin;
+    const unsigned char opcode = decoded.frame.opcode;
+    std::string payload = decoded.frame.payload;
+    inBuffer_.retrieve(static_cast<int>(decoded.frame.bytesConsumed));
 
     if (opcode == 0x8) {
       if (payload.size() == 1) {
@@ -525,12 +431,14 @@ void HttpData::handleWebSocketFrame() {
       } else {
         closeAfterWrite_ = true;
         connectionState_ = H_DISCONNECTING;
-        handleWriteInLoop(webSocketFrame(0x8, payload));
+        handleWriteInLoop(
+            httpserver::WebSocketCodec::EncodeFrame(0x8, payload));
       }
       return;
     }
     if (opcode == 0x9) {
-      handleWriteInLoop(webSocketFrame(0xA, payload));
+      handleWriteInLoop(
+          httpserver::WebSocketCodec::EncodeFrame(0xA, payload));
       continue;
     }
     if (opcode == 0xA) continue;
@@ -569,32 +477,10 @@ void HttpData::handleWebSocketFrame() {
       webSocketFragmented_ = false;
     }
 
-    try {
-      const json message = json::parse(payload);
-      const std::string type = message.value("type", "");
-      if (type == "join" && message.contains("roomId") &&
-          message["roomId"].is_string()) {
-        const std::string roomId = message["roomId"].get<std::string>();
-        const bool joined = ChatManager::getInstance().joinRoom(roomId,
-                                                                 shared_from_this());
-        if (!joined) {
-          sendMsg(json{{"type", "error"}, {"code", "room_not_found"}}.dump());
-        }
-      } else if (type == "chat" && message.contains("roomId") &&
-                 message.contains("content") && message["roomId"].is_string() &&
-                 message["content"].is_string()) {
-        const std::string roomId = message["roomId"].get<std::string>();
-        const std::string content = message["content"].get<std::string>();
-        if (content.size() > 4096 ||
-            !ChatManager::getInstance().broadcastToRoom(
-                roomId, json{{"type", "chat"}, {"roomId", roomId},
-                             {"content", content}}.dump(), fd_)) {
-          sendMsg(json{{"type", "error"}, {"code", "room_membership_required"}}.dump());
-        }
-      }
-    } catch (const std::exception&) {
-      sendMsg(json{{"type", "error"}, {"code", "invalid_message"}}.dump());
-    }
+    const auto self = shared_from_this();
+    httpserver::ChatApplication::HandleMessage(
+        payload, fd_, self,
+        [self](const std::string& message) { self->sendMsg(message); });
   }
 }
 
@@ -669,7 +555,7 @@ void HttpData::handleConn() {
     events_ = (EPOLLOUT | EPOLLET);
   } else {
     // cout << "close with errors" << endl;
-    loop_->runInLoop(bind(&HttpData::handleClose, shared_from_this()));
+    loop_->runInLoop(std::bind(&HttpData::handleClose, shared_from_this()));
   }
 }
 
@@ -681,29 +567,24 @@ URIState HttpData::parseURI() {
   }
   if (end == 0 || end > kMaxRequestLineBytes) return PARSE_URI_ERROR;
 
-  const std::string line = input.substr(0, end);
-  const std::size_t firstSpace = line.find(' ');
-  const std::size_t secondSpace = line.find(' ', firstSpace + 1);
-  if (firstSpace == std::string::npos || secondSpace == std::string::npos ||
-      line.find(' ', secondSpace + 1) != std::string::npos) {
-    return PARSE_URI_ERROR;
-  }
-  const std::string method = line.substr(0, firstSpace);
-  if (method == "GET") method_ = METHOD_GET;
-  else if (method == "POST") method_ = METHOD_POST;
-  else if (method == "HEAD") method_ = METHOD_HEAD;
+  const auto parsed = httpserver::HttpRequestParser::ParseRequestLine(
+      std::string_view(input).substr(0, end));
+  if (!parsed.has_value()) return PARSE_URI_ERROR;
+
+  if (parsed->method == "GET") method_ = METHOD_GET;
+  else if (parsed->method == "POST") method_ = METHOD_POST;
+  else if (parsed->method == "HEAD") method_ = METHOD_HEAD;
   else return PARSE_URI_ERROR;
 
-  const std::string target = line.substr(firstSpace + 1, secondSpace - firstSpace - 1);
-  const std::string version = line.substr(secondSpace + 1);
-  if (target.empty() || target.size() > 2048 || version.empty()) return PARSE_URI_ERROR;
-  if (version == "HTTP/1.1") HTTPVersion_ = HTTP_11;
-  else if (version == "HTTP/1.0") HTTPVersion_ = HTTP_10;
+  if (parsed->version == "HTTP/1.1") HTTPVersion_ = HTTP_11;
+  else if (parsed->version == "HTTP/1.0") HTTPVersion_ = HTTP_10;
   else return PARSE_URI_ERROR;
 
-  const std::size_t queryStart = target.find('?');
-  uri_ = target.substr(0, queryStart);
-  query_ = queryStart == std::string::npos ? "" : target.substr(queryStart + 1);
+  const std::size_t queryStart = parsed->target.find('?');
+  uri_ = parsed->target.substr(0, queryStart);
+  query_ = queryStart == std::string::npos
+               ? ""
+               : parsed->target.substr(queryStart + 1);
   if (hasPathTraversal(uri_)) return PARSE_URI_ERROR;
   path_ = uri_;
   fileName_ = uri_ == "/" ? "index.html" : uri_.substr(1);
@@ -720,38 +601,18 @@ HeaderState HttpData::parseHeaders() {
   }
   if (terminator > kMaxHeaderBytes) return PARSE_HEADER_ERROR;
 
-  const std::string block = input.substr(0, terminator);
-  std::size_t start = 0;
-  std::size_t count = 0;
-  while (start < block.size()) {
-    const std::size_t end = block.find("\r\n", start);
-    const std::size_t lineEnd = end == std::string::npos ? block.size() : end;
-    const std::string line = block.substr(start, lineEnd - start);
-    const std::size_t colon = line.find(':');
-    if (colon == std::string::npos || colon == 0 || ++count > kMaxHeaderCount) {
-      return PARSE_HEADER_ERROR;
-    }
-    const std::string key = toLower(line.substr(0, colon));
-    const std::size_t valueStart = line.find_first_not_of(" \t", colon + 1);
-    const std::string value = valueStart == std::string::npos ? "" :
-        line.substr(valueStart, line.find_last_not_of(" \t") - valueStart + 1);
-    if (key.size() > 128 || value.size() > 8192) return PARSE_HEADER_ERROR;
-    if (key == "content-length") {
-      const auto length = parseUnsignedSize(value, kMaxBodyBytes);
-      if (!length.has_value() || (hasContentLength_ && contentLength_ != *length)) {
-        return PARSE_HEADER_ERROR;
-      }
-      contentLength_ = *length;
-      hasContentLength_ = true;
-    }
-    headers_[key] = value;
-    if (end == std::string::npos) break;
-    start = end + 2;
+  const auto parsed = httpserver::HttpRequestParser::ParseHeaders(
+      std::string_view(input).substr(0, terminator),
+      HTTPVersion_ == HTTP_11 ? "HTTP/1.1" : "HTTP/1.0");
+  if (!parsed.has_value()) return PARSE_HEADER_ERROR;
+
+  headers_ = parsed->values;
+  if (parsed->contentLength.has_value()) {
+    contentLength_ = *parsed->contentLength;
+    hasContentLength_ = true;
   }
   inBuffer_.retrieve(static_cast<int>(terminator + 4));
-  const auto connection = headers_.find("connection");
-  keepAlive_ = connection == headers_.end() ? HTTPVersion_ == HTTP_11 :
-      toLower(connection->second).find("keep-alive") != std::string::npos;
+  keepAlive_ = parsed->keepAlive;
   return PARSE_HEADER_SUCCESS;
 }
 
@@ -779,8 +640,7 @@ AnalysisState HttpData::handleWebSocketHandshake() {
     }
 
     // 3. JWT 鉴权（从 URL query 中取 token）
-    std::string token = getQueryParam("token");
-    const auto username = CryptoUtil::verifyAndExtractUsername(token);
+    const auto username = httpserver::Authenticator::VerifyQuery(query_);
     if (!username.has_value()) {
         handleError(fd_, 401, "Unauthorized");
         return ANALYSIS_ERROR;
@@ -812,65 +672,26 @@ AnalysisState HttpData::handleWebSocketHandshake() {
     return ANALYSIS_SUCCESS;
 }
 
-std::string HttpData::getQueryParam(const std::string& key) const {
-  std::size_t start = 0;
-  while (start <= query_.size()) {
-    const std::size_t end = query_.find('&', start);
-    const std::string item = query_.substr(start, end - start);
-    const std::size_t equal = item.find('=');
-    if (equal != std::string::npos && item.substr(0, equal) == key) {
-      return item.substr(equal + 1);
-    }
-    if (end == std::string::npos) break;
-    start = end + 1;
-  }
-  return {};
-}
-
 AnalysisState HttpData::analysisRequest() {
-
-    // ==========================================================
-    // 1. 处理注册接口
-    // ==========================================================
-    if (method_ == METHOD_POST && uri_ == "/register") {
-        UserController::handleRegister(shared_from_this());
-        return ANALYSIS_SUCCESS;
-    }
-
-    if ((method_ == METHOD_GET || method_ == METHOD_HEAD) && uri_ == "/ping") {
-      sendResponse(200, "text/plain", "OK");
-      return ANALYSIS_SUCCESS;
-    }
-
-    // ==========================================================
-    // 2. 处理登录接口
-    // ==========================================================
-    if (method_ == METHOD_POST && uri_ == "/login") {
-        UserController::handleLogin(shared_from_this());
-        return ANALYSIS_SUCCESS;
-    }
-
-    // ==========================================================
-    // 3. WebSocket 握手（必须在普通 GET 之前）
-    // ==========================================================
     if (method_ == METHOD_GET && uri_ == "/ws") {
         return handleWebSocketHandshake();
     }
 
-    if (path_ == "/room/create" && method_ == METHOD_POST) {
-        if (!authenticatedRequest()) {
-            sendResponse(401, "application/json", "{\"ok\":false,\"msg\":\"Unauthorized\"}");
-            return ANALYSIS_SUCCESS;
-        }
-        RoomController::handleCreateRoom(shared_from_this());
-        return ANALYSIS_SUCCESS;
+    std::string_view method;
+    switch (method_) {
+      case METHOD_GET:
+        method = "GET";
+        break;
+      case METHOD_POST:
+        method = "POST";
+        break;
+      case METHOD_HEAD:
+        method = "HEAD";
+        break;
     }
-    if (path_ == "/room/list" && method_ == METHOD_GET) {
-        if (!authenticatedRequest()) {
-            sendResponse(401, "application/json", "{\"ok\":false,\"msg\":\"Unauthorized\"}");
-            return ANALYSIS_SUCCESS;
-        }
-        RoomController::handleGetRoomList(shared_from_this());
+    if (httpserver::ApplicationRouter::Dispatch(
+            shared_from_this(), method, uri_, query_, headers_) ==
+        httpserver::RouteResult::kHandled) {
         return ANALYSIS_SUCCESS;
     }
 
@@ -878,73 +699,29 @@ AnalysisState HttpData::analysisRequest() {
         return handleStaticFile();
     }
 
-    //其他情况
     handleError(fd_, 405, "Method Not Allowed");
     return ANALYSIS_ERROR;
 }
 
 
 AnalysisState HttpData::handleStaticFile() {
-  if (fileName_.empty() || hasPathTraversal(uri_)) {
+  const auto file = staticFileService_.load(uri_, method_ == METHOD_GET);
+  if (file.status == httpserver::StaticFileStatus::kNotFound) {
     handleError(fd_, 404, "Not Found");
     return ANALYSIS_SUCCESS;
   }
-  std::error_code filesystemError;
-  const std::filesystem::path root =
-      std::filesystem::canonical("./wwwroot", filesystemError);
-  const std::filesystem::path requested =
-      std::filesystem::canonical(root / fileName_, filesystemError);
-  if (filesystemError || !isWithinDirectory(root, requested)) {
-    handleError(fd_, 404, "Not Found");
-    return ANALYSIS_SUCCESS;
-  }
-  const std::string path = requested.string();
-  struct stat metadata {};
-  if (stat(path.c_str(), &metadata) < 0 || !S_ISREG(metadata.st_mode)) {
-    handleError(fd_, 404, "Not Found");
-    return ANALYSIS_SUCCESS;
-  }
-  if (metadata.st_size < 0 ||
-      static_cast<std::uintmax_t>(metadata.st_size) > kMaxStaticFileBytes) {
+  if (file.status == httpserver::StaticFileStatus::kTooLarge) {
     handleError(fd_, 413, "File Too Large");
     return ANALYSIS_SUCCESS;
   }
 
-  const std::size_t contentLength = static_cast<std::size_t>(metadata.st_size);
-  const std::size_t dot = path.find_last_of('.');
-  const std::string mime = dot == std::string::npos ? "application/octet-stream" :
-      MimeType::getMime(path.substr(dot));
-  std::string header = "HTTP/1.1 200 OK\r\nContent-Type: " + mime +
-      "\r\nContent-Length: " + std::to_string(contentLength) +
+  std::string header = "HTTP/1.1 200 OK\r\nContent-Type: " + file.contentType +
+      "\r\nContent-Length: " + std::to_string(file.contentLength) +
       "\r\nConnection: " + (keepAlive_ ? "Keep-Alive" : "close") + "\r\n\r\n";
   outBuffer_.append(header);
-  if (method_ == METHOD_GET) {
-    std::ifstream file(path, std::ios::binary);
-    std::string body((std::istreambuf_iterator<char>(file)),
-                     std::istreambuf_iterator<char>());
-    if (body.size() != contentLength) {
-      outBuffer_.clear();
-      handleError(fd_, 404, "Not Found");
-      return ANALYSIS_SUCCESS;
-    }
-    outBuffer_.append(body);
-  }
+  if (method_ == METHOD_GET) outBuffer_.append(file.body);
   submitAsyncWrite();
   return ANALYSIS_SUCCESS;
-}
-
-bool HttpData::authenticatedRequest() const {
-  std::string token = getQueryParam("token");
-  if (token.empty()) {
-    const auto authorization = headers_.find("authorization");
-    constexpr std::string_view prefix = "Bearer ";
-    if (authorization != headers_.end() &&
-        authorization->second.size() > prefix.size() &&
-        authorization->second.compare(0, prefix.size(), prefix) == 0) {
-      token = authorization->second.substr(prefix.size());
-    }
-  }
-  return CryptoUtil::verifyAndExtractUsername(token).has_value();
 }
 
 void HttpData::handleError(int fd, int err_num, string short_msg) {
@@ -990,7 +767,7 @@ void HttpData::handleClose() {
   }
   seperateTimer();
   if (fd_ >= 0) {
-    ChatManager::getInstance().leaveUser(fd_);
+    httpserver::ChatApplication::Leave(fd_);
   }
   if (fd_ >= 0) {
     close(fd_);

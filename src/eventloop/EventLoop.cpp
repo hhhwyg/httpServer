@@ -4,9 +4,7 @@
 #include <iostream>
 #include<thread>
 #include "Util.h"
-#include "base/Logging.h"
-
-using namespace std;
+#include "httpserver/base/Logging.h"
 
 __thread EventLoop* t_loopInThisThread = 0;
 
@@ -19,15 +17,16 @@ int createEventfd() {
   return evtfd;
 }//创建了一个可以被用户态程序用作 等待/通知 机制的文件描述符。
 
-EventLoop::EventLoop(PollerBackend backend, const PollerConfig& config)
+EventLoop::EventLoop(httpserver::PollerBackend backend,
+                     const httpserver::PollerConfig& config)
     : looping_(false),
-      poller_(CreatePoller(backend, config)),
+      poller_(httpserver::CreatePoller(backend, config)),
       wakeupFd_(createEventfd()),
       quit_(false),
       eventHandling_(false),
       callingPendingFunctors_(false),
       threadId_(CurrentThread::tid()),
-      pwakeupChannel_(new Channel(this, wakeupFd_)) {
+      pwakeupChannel_(new httpserver::Channel(this, wakeupFd_)) {
   if (t_loopInThisThread) {
     // LOG << "Another EventLoop " << t_loopInThisThread << " exists in this
     // thread " << threadId_;
@@ -36,8 +35,8 @@ EventLoop::EventLoop(PollerBackend backend, const PollerConfig& config)
   }
   // pwakeupChannel_->setEvents(EPOLLIN | EPOLLET | EPOLLONESHOT);
   pwakeupChannel_->setEvents(EPOLLIN | EPOLLET);
-  pwakeupChannel_->setReadHandler(bind(&EventLoop::handleRead, this));
-  pwakeupChannel_->setConnHandler(bind(&EventLoop::handleConn, this));
+  pwakeupChannel_->setReadHandler(std::bind(&EventLoop::handleRead, this));
+  pwakeupChannel_->setConnHandler(std::bind(&EventLoop::handleConn, this));
   poller_->epoll_add(pwakeupChannel_, 0);
 }
 
@@ -95,7 +94,6 @@ void EventLoop::loop() {
   looping_ = true;
   quit_ = false;
   // LOG_TRACE << "EventLoop " << this << " start looping";
-  std::vector<SP_Channel> ret;
   while (!quit_) {
     // cout << "doing" << endl;
     eventHandling_ = true;
@@ -116,7 +114,7 @@ void EventLoop::doPendingFunctors() {
     functors.swap(pendingFunctors_);
   }
 
-  for (size_t i = 0; i < functors.size(); ++i) functors[i]();
+  for (std::size_t i = 0; i < functors.size(); ++i) functors[i]();
   callingPendingFunctors_ = false;
 }
 

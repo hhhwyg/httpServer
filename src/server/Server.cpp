@@ -4,18 +4,19 @@
 #include <sys/socket.h>
 #include <functional>
 #include "Util.h"
-#include "base/Logging.h"
 #include "base/ObjectPool.h"
 #include "HttpData.h"
+#include "httpserver/base/Logging.h"
 
-Server::Server(EventLoop *loop, int threadNum, int port, PollerBackend backend,
-               PollerConfig config)
+Server::Server(EventLoop* loop, int threadNum, int port,
+               httpserver::PollerBackend backend,
+               httpserver::PollerConfig config)
     : loop_(loop),
       threadNum_(threadNum),
       eventLoopThreadPool_(
           new EventLoopThreadPool(loop_, threadNum, backend, config)),
       started_(false),
-      acceptChannel_(new Channel(loop,0)),
+      acceptChannel_(new httpserver::Channel(loop, 0)),
       port_(port),
       listenFd_(socket_bind_listen(port_)),
       maxFds_(config.maxFds) {
@@ -33,8 +34,8 @@ void Server::start() {
   eventLoopThreadPool_->start();
   // acceptChannel_->setEvents(EPOLLIN | EPOLLET | EPOLLONESHOT);
   acceptChannel_->setEvents(EPOLLIN | EPOLLET);
-  acceptChannel_->setReadHandler(bind(&Server::handNewConn, this));
-  acceptChannel_->setConnHandler(bind(&Server::handThisConn, this));
+  acceptChannel_->setReadHandler(std::bind(&Server::handNewConn, this));
+  acceptChannel_->setConnHandler(std::bind(&Server::handThisConn, this));
   loop_->addToPoller(acceptChannel_, 0);
   started_ = true;
 }

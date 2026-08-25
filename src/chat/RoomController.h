@@ -1,8 +1,8 @@
 #pragma once
-#include <memory>
-#include "../httpdata/HttpData.h"
+
+#include "httpserver/application/RoomController.h"
 
 namespace RoomController {
-    void handleCreateRoom(std::shared_ptr<HttpData> httpData);
-    void handleGetRoomList(std::shared_ptr<HttpData> httpData);
+using httpserver::RoomController::handleCreateRoom;
+using httpserver::RoomController::handleGetRoomList;
 }

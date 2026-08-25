@@ -1,4 +1,4 @@
-#include "Logging.h"
+#include "httpserver/base/Logging.h"
 #include "CurrentThread.h"
 #include "Thread.h"
 #include "AsyncLogging.h"
@@ -11,11 +11,14 @@
 static pthread_once_t once_control_ = PTHREAD_ONCE_INIT;
 static AsyncLogging *AsyncLogger_;
 
+namespace httpserver {
+
 std::string Logger::logFileName_ = "./WebServer.log";
 
 void once_init()
 {
-    AsyncLogger_ = new AsyncLogging(Logger::getLogFileName());
+    AsyncLogger_ =
+        new AsyncLogging(httpserver::Logger::getLogFileName());
     AsyncLogger_->start(); 
 }
 
@@ -55,3 +58,5 @@ Logger::~Logger()
     const LogStream::Buffer& buf(stream().buffer());
     output(buf.data(), buf.length());
 }
+
+}  // namespace httpserver

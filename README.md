@@ -231,18 +231,18 @@ cmake --build build/debug --target LoggingStressTest --parallel
 │   ├── base/                   # 线程、锁、缓冲区和日志基础组件
 │   ├── channel/                # Channel 事件回调封装
 │   ├── chat/                   # 聊天室、用户和房间控制器
-│   ├── epoll/                  # 传统 epoll 实现，当前主流程使用 IoUring
+│   ├── epoll/                  # 可选 epoll transport backend
 │   ├── eventloop/              # EventLoop 和 EventLoopThreadPool
 │   ├── httpdata/               # HTTP 解析、静态文件和 WebSocket 处理
 │   ├── server/                 # 监听 Socket 和新连接分发
 │   ├── sql/                    # MySQL 连接池和 RAII 连接管理
-│   ├── thread/                 # 旧版线程池实现，当前未被主流程使用
+│   ├── thread/                 # 独立实验线程池，不参与默认构建
 │   ├── timer/                  # 连接超时定时器
 │   └── util/                   # Socket、缓冲区和加密辅助函数
 ├── third_party/json.hpp        # nlohmann/json 单头文件库
 ├── wwwroot/index.html          # 聊天室前端页面
 ├── tests/                      # 手动编译的示例和压力测试
-├── scripts/                    # 源码改写和重构辅助脚本
+├── scripts/                    # 独立的源码改写和重构辅助脚本
 ├── docs/                       # 设计说明和代码审查文档
 └── logs/                       # 已保存的运行日志
 ```

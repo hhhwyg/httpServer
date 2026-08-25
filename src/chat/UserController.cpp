@@ -1,5 +1,7 @@
 #include "UserController.h"
 
+#include "httpdata/HttpData.h"
+
 #include <array>
 #include <cctype>
 #include <optional>
@@ -11,7 +13,7 @@
 
 using json = nlohmann::json;
 
-namespace UserController {
+namespace httpserver::UserController {
 namespace {
 
 constexpr std::size_t kUsernameMinLength = 3;
@@ -210,4 +212,4 @@ void handleLogin(std::shared_ptr<HttpData> httpData) {
   httpData->sendResponse(200, "application/json", response.dump());
 }
 
-}  // namespace UserController
+}  // namespace httpserver::UserController

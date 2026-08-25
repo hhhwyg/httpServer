@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 #include "CountDownLatch.h"
-#include "LogStream.h"
+#include "httpserver/base/LogStream.h"
 #include "MutexLock.h"
 #include "Thread.h"
 #include "noncopyable.h"
@@ -31,7 +31,7 @@ class AsyncLogging : noncopyable {
 
  private:
   void threadFunc();
-  typedef FixedBuffer<kLargeBuffer> Buffer;
+  using Buffer = httpserver::FixedBuffer<httpserver::kLargeBuffer>;
   typedef std::vector<std::shared_ptr<Buffer>> BufferVector;
   typedef std::shared_ptr<Buffer> BufferPtr;
   const int flushInterval_;

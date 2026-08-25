@@ -1,4 +1,4 @@
-#include "config/ServerConfig.h"
+#include "httpserver/config/ServerConfig.h"
 
 #include <charconv>
 #include <cstdlib>
@@ -33,6 +33,8 @@ int readIntEnvironment(const char* name, int defaultValue, int minimum,
 }
 
 }  // namespace
+
+namespace httpserver {
 
 bool DatabaseConfig::anyCredentialConfigured() const {
   return !user.empty() || !password.empty() || !database.empty();
@@ -86,3 +88,5 @@ ServerConfig ServerConfig::LoadFromEnvironment() {
   }
   return config;
 }
+
+}  // namespace httpserver

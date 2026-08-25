@@ -5,7 +5,7 @@
 #include <optional>
 #include <unordered_map>
 
-class Channel;
+#include "httpserver/transport/Channel.h"
 
 enum class UringOp {
   kPoll,
@@ -17,7 +17,7 @@ struct UringOperation {
   std::uint64_t token;
   UringOp type;
   int fd;
-  std::shared_ptr<Channel> channel;
+  httpserver::ChannelPtr channel;
 };
 
 // user_data is an operation token, never a file descriptor. A completion
@@ -25,7 +25,7 @@ struct UringOperation {
 // the kernel reuses the numeric fd for a different connection.
 class UringOperationRegistry {
  public:
-  std::uint64_t track(UringOp type, int fd, std::shared_ptr<Channel> channel) {
+  std::uint64_t track(UringOp type, int fd, httpserver::ChannelPtr channel) {
     const std::uint64_t token = nextToken();
     operations_.emplace(token, UringOperation{token, type, fd, std::move(channel)});
     return token;

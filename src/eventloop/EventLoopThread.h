@@ -8,15 +8,16 @@
 
 class EventLoopThread : noncopyable {
  public:
-  EventLoopThread(PollerBackend backend, PollerConfig config);
+  EventLoopThread(httpserver::PollerBackend backend,
+                  httpserver::PollerConfig config);
   ~EventLoopThread();
   EventLoop* startLoop();
 
  private:
   void threadFunc();
   EventLoop* loop_;
-  PollerBackend backend_;
-  PollerConfig config_;
+  httpserver::PollerBackend backend_;
+  httpserver::PollerConfig config_;
   bool exiting_;
   Thread thread_;
   MutexLock mutex_;

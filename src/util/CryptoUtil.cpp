@@ -22,6 +22,7 @@
 using json = nlohmann::json;
 
 namespace CryptoUtil {
+using httpserver::JwtConfig;
 namespace {
 
 constexpr std::size_t kJwtMaxLength = 8192;

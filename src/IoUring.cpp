@@ -6,7 +6,7 @@
 #include <sys/epoll.h>
 #include <vector>
 
-#include "base/Logging.h"
+#include "httpserver/base/Logging.h"
 
 namespace {
 
@@ -52,7 +52,8 @@ __uint32_t IoUring::pollToEpollEvents(short pollEvents) {
   return epollEvents;
 }
 
-IoUring::IoUring(const PollerConfig& config) : queueSize_(config.ioUringQueueSize) {
+IoUring::IoUring(const httpserver::PollerConfig& config)
+    : queueSize_(config.ioUringQueueSize) {
   const int result = io_uring_queue_init(queueSize_, &ring_, 0);
   if (result < 0) {
     LOG << "io_uring_queue_init failed: " << std::strerror(-result);
@@ -62,7 +63,7 @@ IoUring::IoUring(const PollerConfig& config) : queueSize_(config.ioUringQueueSiz
 
 IoUring::~IoUring() { io_uring_queue_exit(&ring_); }
 
-void IoUring::submitPollAdd(const SP_Channel& request) {
+void IoUring::submitPollAdd(const httpserver::ChannelPtr& request) {
   if (!request || !request->isActive() || request->getEvents() == 0) {
     return;
   }
@@ -116,7 +117,7 @@ void IoUring::cancelOperation(UringOp type, int fd) {
   io_uring_sqe_set_data64(sqe, 0);
 }
 
-void IoUring::epoll_add(SP_Channel request, int timeout) {
+void IoUring::epoll_add(httpserver::ChannelPtr request, int timeout) {
   if (!request || request->getFd() < 0) {
     return;
   }
@@ -137,7 +138,7 @@ void IoUring::epoll_add(SP_Channel request, int timeout) {
   submitPollAdd(request);
 }
 
-void IoUring::epoll_mod(SP_Channel request, int timeout) {
+void IoUring::epoll_mod(httpserver::ChannelPtr request, int timeout) {
   if (!request || !request->isActive()) {
     return;
   }
@@ -155,7 +156,7 @@ void IoUring::epoll_mod(SP_Channel request, int timeout) {
   submitPollAdd(request);
 }
 
-void IoUring::epoll_del(SP_Channel request) {
+void IoUring::epoll_del(httpserver::ChannelPtr request) {
   if (!request) {
     return;
   }
@@ -174,7 +175,8 @@ void IoUring::epoll_del(SP_Channel request) {
   }
 }
 
-void IoUring::submitRead(SP_Channel request, void* buffer, size_t length) {
+void IoUring::submitRead(httpserver::ChannelPtr request, void* buffer,
+                         size_t length) {
   if (!request || !request->isActive() || buffer == nullptr || length == 0) {
     return;
   }
@@ -192,7 +194,8 @@ void IoUring::submitRead(SP_Channel request, void* buffer, size_t length) {
   io_uring_sqe_set_data64(sqe, token);
 }
 
-void IoUring::submitWrite(SP_Channel request, const void* buffer, size_t length) {
+void IoUring::submitWrite(httpserver::ChannelPtr request, const void* buffer,
+                          size_t length) {
   if (!request || !request->isActive() || buffer == nullptr || length == 0) {
     return;
   }
@@ -253,7 +256,7 @@ void IoUring::processEvents() {
         continue;
       }
 
-      const SP_Channel& channel = operation->channel;
+      const httpserver::ChannelPtr& channel = operation->channel;
       // 关闭流程会先让 Channel 失活。旧 read/write/poll CQE 到达时只释放
       // 操作记录，不再进入 HttpData 回调。
       if (!channel || !channel->isActive() ||
@@ -291,7 +294,7 @@ void IoUring::processEvents() {
   }
 }
 
-void IoUring::add_timer(SP_Channel request, int timeout) {
+void IoUring::add_timer(httpserver::ChannelPtr request, int timeout) {
   const std::shared_ptr<HttpData> holder = request->getHolder();
   if (holder) {
     timerManager_.addTimer(holder, timeout);
