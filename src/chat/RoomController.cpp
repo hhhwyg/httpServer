@@ -16,7 +16,18 @@ void handleCreateRoom(std::shared_ptr<HttpData> httpData) {
         return;
     }
 
-    std::string roomName = root.value("name", "Unnamed Room");
+    if (!root.is_object() || !root.contains("name") ||
+        !root["name"].is_string()) {
+        httpData->sendResponse(400, "application/json",
+                               "{\"ok\":false,\"msg\":\"Invalid room name\"}");
+        return;
+    }
+    std::string roomName = root["name"].get<std::string>();
+    if (roomName.empty() || roomName.size() > 128) {
+        httpData->sendResponse(400, "application/json",
+                               "{\"ok\":false,\"msg\":\"Invalid room name\"}");
+        return;
+    }
     
     // 在 ChatManager 中创建并获取新 ID
     auto newRoom = ChatManager::getInstance().getOrCreateRoom(roomName);

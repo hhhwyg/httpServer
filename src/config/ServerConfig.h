@@ -24,6 +24,11 @@ struct DatabaseConfig {
   bool enabled() const;
 };
 
+struct ServerLimits {
+  int maxFds = 100000;
+  unsigned ioUringQueueSize = 4096;
+};
+
 // Process configuration is read once at startup. Secrets are intentionally
 // supplied only through environment variables and are never logged.
 class ServerConfig {
@@ -35,6 +40,7 @@ class ServerConfig {
 
   JwtConfig jwt;
   DatabaseConfig database;
+  ServerLimits limits;
 
  private:
   std::vector<std::string> validationErrors;

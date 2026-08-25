@@ -44,6 +44,15 @@ target_link_libraries(HttpDataLifecycleTest PRIVATE httpserver::core)
 add_test(NAME httpdata.lifecycle COMMAND HttpDataLifecycleTest)
 set_tests_properties(httpdata.lifecycle PROPERTIES LABELS "unit;lifecycle")
 
+add_executable(ChatRoomTest chat/ChatRoomTest.cpp)
+target_include_directories(ChatRoomTest PRIVATE
+    ${PROJECT_SOURCE_DIR}/src
+    ${HTTPSERVER_LEGACY_INCLUDE_DIRS}
+)
+target_link_libraries(ChatRoomTest PRIVATE httpserver::core)
+add_test(NAME chat.room_membership COMMAND ChatRoomTest)
+set_tests_properties(chat.room_membership PROPERTIES LABELS "unit;chat")
+
 add_test(
     NAME integration.http_smoke
     COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/HttpSmokeTest.sh

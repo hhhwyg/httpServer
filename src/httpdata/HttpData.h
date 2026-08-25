@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <cstdint>
 #include "base/ChainBuffer.h"
 #include "Timer.h"
 
@@ -14,7 +15,6 @@
 class EventLoop;
 class TimerNode;
 class Channel;
-class ChatRoom;
 
 enum ProcessState {
   STATE_PARSE_URI = 1,
@@ -111,7 +111,9 @@ class HttpData : public std::enable_shared_from_this<HttpData> {
   bool hasContentLength_ = false;
   std::unordered_map<std::string, std::string> headers_;  // changed from map: O(1) vs O(logN) per lookup
   std::weak_ptr<TimerNode> timer_;
-  std::unordered_map<int, std::shared_ptr<ChatRoom>> rooms_;
+  std::string webSocketFragment_;
+  bool webSocketFragmented_ = false;
+  bool closeAfterWrite_ = false;
   
   void handleRead();
   void handleReadComplete(int bytes_read);
@@ -124,10 +126,11 @@ class HttpData : public std::enable_shared_from_this<HttpData> {
   void handleConn();
   void handleError(int fd, int err_num, std::string short_msg);
   void handleWebSocketFrame();
-  void broadcastMessage(const std::string& msg, HttpData* sender);
+  void closeWebSocket(std::uint16_t code, const std::string& reason = {});
+  bool authenticatedRequest() const;
   void handleWriteInLoop(const std::string& msg);
   AnalysisState handleStaticFile();
-  std::string getQueryParam(const std::string& key);
+  std::string getQueryParam(const std::string& key) const;
 
   URIState parseURI();
   HeaderState parseHeaders();

@@ -26,6 +26,8 @@ export HTTPSERVER_DB_POOL_SIZE=4
 | `HTTPSERVER_DB_PASSWORD` | 未设置 | 仅通过部署环境提供 |
 | `HTTPSERVER_DB_NAME` | 未设置 | 与 user、password 必须同时设置 |
 | `HTTPSERVER_DB_POOL_SIZE` | `4` | 1 到 64 |
+| `HTTPSERVER_MAX_FDS` | `100000` | 1024 到 1000000；接收连接的 fd 上限 |
+| `HTTPSERVER_IO_URING_QUEUE_SIZE` | `4096` | 64 到 65536；io_uring SQ/CQ 队列容量 |
 
 未设置全部 DB 变量时，服务器仍可启动并提供静态文件和 `/ping`，但 `/register`、`/login` 返回 `503`。未设置 JWT secret 时，登录和 WebSocket 鉴权同样返回 `503` 或 `401`，不会回退到固定 secret。
 

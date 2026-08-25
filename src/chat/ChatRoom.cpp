@@ -36,3 +36,9 @@ void ChatRoom::broadcast(const std::string& msg, int sendFd) {
             user->sendMsg(msg);
         }
     }
+
+bool ChatRoom::contains(int fd) const {
+        std::lock_guard<std::mutex> lock(mtx_);
+        const auto it = users_.find(fd);
+        return it != users_.end() && !it->second.expired();
+    }

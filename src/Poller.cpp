@@ -3,12 +3,13 @@
 #include "Epoll.h"
 #include "IoUring.h"
 
-std::unique_ptr<Poller> CreatePoller(PollerBackend backend) {
+std::unique_ptr<Poller> CreatePoller(PollerBackend backend,
+                                     const PollerConfig& config) {
   switch (backend) {
     case PollerBackend::kEpoll:
-      return std::make_unique<Epoll>();
+      return std::make_unique<Epoll>(config);
     case PollerBackend::kIoUring:
-      return std::make_unique<IoUring>();
+      return std::make_unique<IoUring>(config);
   }
   return nullptr;
 }

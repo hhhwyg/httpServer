@@ -14,7 +14,9 @@ constexpr int kEpollWaitTimeMs = 10000;
 
 }  // namespace
 
-Epoll::Epoll() : epollFd_(epoll_create1(EPOLL_CLOEXEC)), events_(kEventsNum) {
+Epoll::Epoll(const PollerConfig& config)
+    : epollFd_(epoll_create1(EPOLL_CLOEXEC)), events_(kEventsNum) {
+  (void)config;
   assert(epollFd_ >= 0);
 }
 

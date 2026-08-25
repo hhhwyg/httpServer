@@ -65,6 +65,12 @@ ServerConfig ServerConfig::LoadFromEnvironment() {
   config.database.poolSize = readIntEnvironment("HTTPSERVER_DB_POOL_SIZE", 4,
                                                  1, 64,
                                                  &config.validationErrors);
+  config.limits.maxFds = readIntEnvironment("HTTPSERVER_MAX_FDS", 100000,
+                                            1024, 1000000,
+                                            &config.validationErrors);
+  config.limits.ioUringQueueSize = static_cast<unsigned>(readIntEnvironment(
+      "HTTPSERVER_IO_URING_QUEUE_SIZE", 4096, 64, 65536,
+      &config.validationErrors));
 
   if (!config.jwt.secret.empty() && config.jwt.secret.size() < 32) {
     config.validationErrors.emplace_back(

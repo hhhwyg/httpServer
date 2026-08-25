@@ -1,12 +1,13 @@
 #include "EventLoopThreadPool.h"
 
 EventLoopThreadPool::EventLoopThreadPool(EventLoop *baseLoop, int numThreads,
-                                         PollerBackend backend)
+                                         PollerBackend backend, PollerConfig config)
     : baseLoop_(baseLoop),
       started_(false),
       numThreads_(numThreads),
       next_(0),
-      backend_(backend) {
+      backend_(backend),
+      config_(config) {
   if (numThreads_ <= 0) {
     LOG << "numThreads_ <= 0";
     abort();
@@ -18,7 +19,7 @@ void EventLoopThreadPool::start() {
   baseLoop_->assertInLoopThread();
   started_ = true;
   for (int i = 0; i < numThreads_; ++i) {
-    std::shared_ptr<EventLoopThread> t(new EventLoopThread(backend_));
+    std::shared_ptr<EventLoopThread> t(new EventLoopThread(backend_, config_));
     threads_.push_back(t);
     loops_.push_back(t->startLoop());
   }

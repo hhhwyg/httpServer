@@ -11,8 +11,11 @@ public:
         static ChatManager instance;
         return instance;
     }
-    void joinRoom(std::string roomId, std::shared_ptr<HttpData> user);
-    void broadcastToRoom(std::string roomId, const std::string& msg, int senderFd);
+    bool joinRoom(const std::string& roomId, std::shared_ptr<HttpData> user);
+    bool broadcastToRoom(const std::string& roomId, const std::string& msg,
+                         int senderFd);
+    bool isMember(const std::string& roomId, int fd);
+    void leaveUser(int fd);
     std::vector<std::shared_ptr<ChatRoom>>getAllRooms();
     std::shared_ptr<ChatRoom> getOrCreateRoom(std::string name);
 private:

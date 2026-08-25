@@ -9,7 +9,7 @@
 
 class IoUring : public Poller {
  public:
-  IoUring();
+  explicit IoUring(const PollerConfig& config = {});
   ~IoUring() override;
 
   // 与 Epoll 完全相同的接口
@@ -35,10 +35,10 @@ class IoUring : public Poller {
 
   // 取消正在进行的 poll 请求
   void cancelPoll(int fd);
-
-  static constexpr unsigned kRingSize = 4096;
+  void cancelOperation(UringOp type, int fd);
 
   struct io_uring ring_;
+  unsigned queueSize_;
   std::unordered_map<int, SP_Channel> channels_;
   std::unordered_map<Channel*, std::shared_ptr<HttpData>> connectionOwners_;
   UringOperationRegistry operations_;

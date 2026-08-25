@@ -35,3 +35,7 @@ grep -qi '^Content-Length: 2' <<<"$head_headers"
 traversal_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
   --path-as-is --max-time 2 "$base_url/../CMakeLists.txt")"
 test "$traversal_status" = '400'
+
+room_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  --max-time 2 "$base_url/room/list")"
+test "$room_status" = '401'

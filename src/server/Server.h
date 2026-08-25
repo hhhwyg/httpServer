@@ -6,7 +6,8 @@
 
 class Server {
  public:
-  Server(EventLoop *loop, int threadNum, int port, PollerBackend backend);
+  Server(EventLoop *loop, int threadNum, int port, PollerBackend backend,
+         PollerConfig config);
   ~Server() {}
   EventLoop *getLoop() const { return loop_; }
   void start();
@@ -21,5 +22,5 @@ class Server {
   std::shared_ptr<Channel> acceptChannel_;
   int port_;
   int listenFd_;
-  static const int MAXFDS = 100000;
+  int maxFds_;
 };

@@ -8,14 +8,17 @@
 #include "base/ObjectPool.h"
 #include "HttpData.h"
 
-Server::Server(EventLoop *loop, int threadNum, int port, PollerBackend backend)
+Server::Server(EventLoop *loop, int threadNum, int port, PollerBackend backend,
+               PollerConfig config)
     : loop_(loop),
       threadNum_(threadNum),
-      eventLoopThreadPool_(new EventLoopThreadPool(loop_, threadNum, backend)),
+      eventLoopThreadPool_(
+          new EventLoopThreadPool(loop_, threadNum, backend, config)),
       started_(false),
       acceptChannel_(new Channel(loop,0)),
       port_(port),
-      listenFd_(socket_bind_listen(port_)) {
+      listenFd_(socket_bind_listen(port_)),
+      maxFds_(config.maxFds) {
   acceptChannel_->setFd(listenFd_);
   handle_for_sigpipe();
   if (setSocketNonBlocking(listenFd_) < 0) {
@@ -57,7 +60,7 @@ void Server::handNewConn() {
     cout << "optval ==" << optval << endl;
     */
     // 限制服务器的最大并发连接数
-    if (accept_fd >= MAXFDS) {
+    if (accept_fd >= maxFds_) {
       close(accept_fd);
       continue;
     }

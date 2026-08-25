@@ -251,15 +251,16 @@ cmake --build build/debug --target LoggingStressTest --parallel
 
 - 项目依赖 Linux 专有接口 `io_uring`、`epoll`、`eventfd` 和 `sendfile`，不能直接在原生 Windows 环境编译运行。
 - 未配置数据库或 JWT secret 时，认证功能会显式关闭；这适合静态文件开发，不可将其作为已配置认证运行。
-- 房间的权限、断线清理和数据库端到端联调尚未完成；聊天室仍定位为演示功能。
+- 房间成员权限和断线清理已在连接层处理；数据库端到端联调尚未完成，聊天室仍定位为演示功能。
 - 数据库访问仍在 EventLoop 中同步执行；数据库慢查询会影响网络循环，后续需要移至独立执行器。
-- HTTP 与 WebSocket 已有基础输入上限和协议校验，但尚未支持 HTTP chunked encoding、WebSocket 分片帧或大文件流式传输。
+- HTTP 与 WebSocket 已有基础输入上限和协议校验，但尚未支持 HTTP chunked encoding 或大文件流式传输。
 - 日志文件轮转接口尚未实现，运行时应自行管理日志文件大小和保存周期。
 
 ## 相关文档
 
 - [日志系统设计](docs/Log的设计.txt)
 - [重构路线图](docs/Refactoring_Roadmap.md)
+- [HTTP API](docs/API.md)
 - [构建与测试](docs/Build_and_Test.md)
 - [开发指南](docs/Development_Guide.md)
 - [持续集成](docs/CI.md)

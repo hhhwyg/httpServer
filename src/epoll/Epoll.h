@@ -10,7 +10,7 @@
 
 class Epoll : public Poller {
  public:
-  Epoll();
+  explicit Epoll(const PollerConfig& config = {});
   ~Epoll() override;
   void epoll_add(SP_Channel request, int timeout) override;
   void epoll_mod(SP_Channel request, int timeout) override;

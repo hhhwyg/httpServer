@@ -125,21 +125,21 @@
             <input type="text" class="search-box" id="room-search" placeholder="搜索房间..." oninput="filterRooms()">
         </div>
         <div class="room-list" id="room-list">
-            <div class="room-item active" onclick="switchRoom(1, '大厅')">
+            <div class="room-item active" onclick="switchRoom('1', '大厅')">
                 <div class="room-icon">H</div>
                 <div class="room-info">
                     <div style="font-weight:600">综合大厅</div>
                     <div style="font-size:12px; opacity:0.7">公共聊天区域</div>
                 </div>
             </div>
-            <div class="room-item" onclick="switchRoom(101, '技术交流')">
+            <div class="room-item" onclick="switchRoom('101', '技术交流')">
                 <div class="room-icon">T</div>
                 <div class="room-info">
                     <div style="font-weight:600">技术交流</div>
                     <div style="font-size:12px; opacity:0.7">聊聊 C++ 和 Linux</div>
                 </div>
             </div>
-            <div class="room-item" onclick="switchRoom(202, '摸鱼闲谈')">
+            <div class="room-item" onclick="switchRoom('202', '摸鱼闲谈')">
                 <div class="room-icon">F</div>
                 <div class="room-info">
                     <div style="font-weight:600">摸鱼闲谈</div>
@@ -174,7 +174,10 @@
 <script>
     let ws;
     let myName = "";
-    let currentRoomId = 1; // 默认进入 1 号房间
+    let currentRoomId = "";
+    let reconnectTimer = null;
+    let reconnectDelayMs = 1000;
+    let shouldReconnect = true;
 
   // 注册逻辑
 async function register() {
@@ -228,7 +231,7 @@ async function login() {
             
             // 隐藏登录框并启动 WebSocket
             document.getElementById("login-modal").style.display = "none";
-            fetchRooms();
+            await fetchRooms();
             initWebSocket();
         } else {
             // 登录失败：显示后端传回的错误信息（如：密码错误、用户不存在）
@@ -242,22 +245,25 @@ async function login() {
 
     // WebSocket 初始化
     function initWebSocket() {
+        if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
         const token = localStorage.getItem("token");
+        if (!token) return;
         const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
         // 注意：连接 URL 携带 token 供后端 handleWebSocketHandshake 鉴权
         ws = new WebSocket(`${protocol}${window.location.host}/ws?token=${token}`);
 
         ws.onopen = () => {
+            reconnectDelayMs = 1000;
             updateStatus(true);
             // 默认加入初始房间
-            joinRoom(currentRoomId);
+            if (currentRoomId) joinRoom(currentRoomId);
         };
 
         ws.onmessage = (evt) => {
             try {
                 const data = JSON.parse(evt.data);
                 // 只有当消息属于当前房间时才显示（除非后端已经做了分发过滤）
-                if (data.roomId === currentRoomId || data.type === "system") {
+                if (String(data.roomId || "") === currentRoomId || data.type === "system") {
                     addMsg(data.user || "成员", data.content, data.user === myName ? "me" : "other");
                 }
             } catch(e) {
@@ -265,7 +271,15 @@ async function login() {
             }
         };
 
-        ws.onclose = () => updateStatus(false);
+        ws.onclose = () => {
+            ws = null;
+            updateStatus(false);
+            if (shouldReconnect && localStorage.getItem("token")) {
+                clearTimeout(reconnectTimer);
+                reconnectTimer = setTimeout(initWebSocket, reconnectDelayMs);
+                reconnectDelayMs = Math.min(reconnectDelayMs * 2, 30000);
+            }
+        };
     }
 
     // 创建新房间
@@ -275,7 +289,10 @@ async function createNewRoom() {
 
     const response = await fetch("/room/create", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${localStorage.getItem("token") || ""}`
+        },
         body: JSON.stringify({ name: roomName })
     });
 
@@ -289,7 +306,9 @@ async function createNewRoom() {
 // 从后端获取真实房间列表并渲染
 async function fetchRooms() {
     try {
-        const response = await fetch("/room/list");
+        const response = await fetch("/room/list", {
+            headers: { "Authorization": `Bearer ${localStorage.getItem("token") || ""}` }
+        });
         const data = await response.json();
         if (data.ok) {
             renderRoomList(data.rooms);
@@ -302,10 +321,15 @@ async function fetchRooms() {
 function renderRoomList(rooms) {
     const listEl = document.getElementById('room-list');
     listEl.innerHTML = ""; // 清空
+    if (!currentRoomId && rooms.length > 0) {
+        currentRoomId = String(rooms[0].id);
+        document.getElementById('current-room-name').innerText = rooms[0].name;
+    }
     rooms.forEach(room => {
+        const roomId = String(room.id);
         const item = document.createElement('div');
-        item.className = `room-item ${room.id === currentRoomId ? 'active' : ''}`;
-        item.onclick = () => switchRoom(room.id, room.name);
+        item.className = `room-item ${roomId === currentRoomId ? 'active' : ''}`;
+        item.onclick = () => switchRoom(roomId, room.name);
         item.innerHTML = `
             <div class="room-icon">${room.name[0].toUpperCase()}</div>
             <div class="room-info">
@@ -319,11 +343,11 @@ function renderRoomList(rooms) {
 
     // 3. 房间切换逻辑
     function switchRoom(roomId, roomName) {
+        roomId = String(roomId);
         if (roomId === currentRoomId) return;
 
         // UI 切换
         document.querySelectorAll('.room-item').forEach(el => el.classList.remove('active'));
-        event.currentTarget.classList.add('active');
         document.getElementById('current-room-name').innerText = roomName;
         document.getElementById('msg-box').innerHTML = `<div class="system-msg">已进入 ${roomName}</div>`;
         
@@ -333,10 +357,10 @@ function renderRoomList(rooms) {
     }
 
     function joinRoom(roomId) {
-        if (ws && ws.readyState === 1) {
+        if (ws && ws.readyState === 1 && roomId) {
             ws.send(JSON.stringify({
                 type: "join",
-                roomId: roomId
+                roomId: String(roomId)
             }));
         }
     }
@@ -354,10 +378,10 @@ function renderRoomList(rooms) {
     // 5. 消息发送（核心：带上 roomId）
     function send() {
         const input = document.getElementById('msg');
-        if (input.value && ws && ws.readyState === 1) {
+        if (input.value && currentRoomId && ws && ws.readyState === 1) {
             const payload = {
                 type: "chat",
-                roomId: currentRoomId,
+                roomId: String(currentRoomId),
                 content: input.value
             };
             ws.send(JSON.stringify(payload));
@@ -388,6 +412,11 @@ function renderRoomList(rooms) {
         }
         box.scrollTop = box.scrollHeight;
     }
+
+    window.addEventListener("beforeunload", () => {
+        shouldReconnect = false;
+        clearTimeout(reconnectTimer);
+    });
 </script>
 </body>
 </html>

@@ -16,7 +16,8 @@ using namespace std;
 class EventLoop {
  public:
   typedef std::function<void()> Functor;
-  explicit EventLoop(PollerBackend backend = PollerBackend::kIoUring);
+  explicit EventLoop(PollerBackend backend = PollerBackend::kIoUring,
+                     const PollerConfig& config = {});
   ~EventLoop();
   void loop();
   void quit();

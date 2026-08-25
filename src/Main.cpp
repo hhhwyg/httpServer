@@ -56,6 +56,8 @@ int main(int argc, char* argv[]) {
     return 1;
   }
   CryptoUtil::configureJwt(config.jwt);
+  const PollerConfig pollerConfig{config.limits.maxFds,
+                                  config.limits.ioUringQueueSize};
 // STL库在多线程上应用
 #ifndef _PTHREADS
   LOG << "_PTHREADS is not defined !";
@@ -75,8 +77,8 @@ int main(int argc, char* argv[]) {
     LOG << "JWT authentication is disabled because HTTPSERVER_JWT_SECRET is unset";
   }
   LOG << "Starting server with " << PollerBackendName(backend) << " backend";
-  EventLoop mainLoop(backend);  // 主线程只负责接收 socket 连接
-  Server myHTTPServer(&mainLoop, threadNum, port, backend);
+  EventLoop mainLoop(backend, pollerConfig);  // 主线程只负责接收 socket 连接
+  Server myHTTPServer(&mainLoop, threadNum, port, backend, pollerConfig);
   myHTTPServer.start();
   mainLoop.loop();
   return 0;

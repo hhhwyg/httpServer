@@ -1,0 +1,43 @@
+services:
+  builder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      HTTPSERVER_JWT_SECRET: local-development-secret-change-me-please
+      HTTPSERVER_DB_HOST: mysql
+      HTTPSERVER_DB_PORT: 3306
+      HTTPSERVER_DB_USER: httpserver
+      HTTPSERVER_DB_PASSWORD: local-development-password
+      HTTPSERVER_DB_NAME: webserver
+      HTTPSERVER_MAX_FDS: 100000
+      HTTPSERVER_IO_URING_QUEUE_SIZE: 4096
+    command: >-
+      bash -lc
+      "cmake --preset debug && cmake --build --preset debug --parallel"
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: local-development-root-password
+      MYSQL_DATABASE: webserver
+      MYSQL_USER: httpserver
+      MYSQL_PASSWORD: local-development-password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  mysql-data:

@@ -19,9 +19,9 @@ int createEventfd() {
   return evtfd;
 }//创建了一个可以被用户态程序用作 等待/通知 机制的文件描述符。
 
-EventLoop::EventLoop(PollerBackend backend)
+EventLoop::EventLoop(PollerBackend backend, const PollerConfig& config)
     : looping_(false),
-      poller_(CreatePoller(backend)),
+      poller_(CreatePoller(backend, config)),
       wakeupFd_(createEventfd()),
       quit_(false),
       eventHandling_(false),

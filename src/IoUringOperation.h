@@ -41,6 +41,15 @@ class UringOperationRegistry {
     return it->second;
   }
 
+  std::optional<std::uint64_t> operationToken(UringOp type, int fd) const {
+    for (const auto& [token, operation] : operations_) {
+      if (operation.type == type && operation.fd == fd) {
+        return token;
+      }
+    }
+    return std::nullopt;
+  }
+
   std::optional<UringOperation> take(std::uint64_t token) {
     const auto it = operations_.find(token);
     if (it == operations_.end()) {

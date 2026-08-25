@@ -25,7 +25,7 @@
 | 构建 | 根目录 CMake 使用全局编译选项和 `GLOB_RECURSE`，测试未接入 CTest | 构建不透明，测试无法在 CI 自动执行 |
 | I/O 生命周期 | `IoUring` 用 `fd` 编码完成事件，按 `fd` 查表回调 | fd 被关闭并复用时，旧 CQE 可能误投递给新连接 |
 | 连接资源 | `HttpData` 已开始修复对象池复用和 fd 关闭 | 仍需用 ASan/LSan 和高频断连验证完整生命周期 |
-| HTTP/聊天协议 | URI 路由、静态文件边界、WebSocket 基础帧校验和前后端字段已统一 | 分片帧、房间授权和聊天室端到端测试仍未完成 |
+| HTTP/聊天协议 | URI 路由、静态文件边界、WebSocket 帧校验、分片和房间成员校验已补齐 | 独立协议模块、聊天室端到端测试和数据库联调仍未完成 |
 | 安全 | JWT 密钥硬编码；密码明文存储；SQL 字符串拼接 | 不能暴露到公网，不能作为完成态功能宣传 |
 | 数据库 | 连接池初始化在 `Main.cpp` 中被注释 | 注册和登录默认不可用且配置不可交付 |
 | 工程交付 | 没有 CTest/CI、运行配置、容器化、基准报告和统一文档 | 别人无法稳定复现项目能力 |
@@ -110,7 +110,7 @@ cmake/                    # CMake 辅助模块
 
 ### Phase 1：先修正连接生命周期和 I/O 正确性
 
-**状态：核心修复已完成。** 已使用操作令牌替代 fd 路由 CQE，消除了 fd 复用时旧完成事件投递给新连接的路径；`HttpData` 回调已改为弱引用，并建立了 Poller 所有权、幂等关闭和定时器分离流程。`Poller` 抽象允许用同一业务和线程模型切换 `io_uring` / `epoll` 后端。Debug、ASan/UBSan 的 4 项 CTest 以及两种后端的真实 `/ping` 回归均通过。长稳连接风暴、慢客户端和显式 read cancel 将作为后续增强继续覆盖。
+**状态：核心修复已完成，增强验证待补。** 已使用操作令牌替代 fd 路由 CQE，消除了 fd 复用时旧完成事件投递给新连接的路径；`HttpData` 回调已改为弱引用，并建立了 Poller 所有权、幂等关闭、read/write/poll 取消和定时器分离流程。fd 上限和 io_uring 队列容量已支持环境变量配置。长稳连接风暴、慢客户端和 Sanitizer 运行仍需在 Linux/WSL CI 中完成。
 
 **目标：** 消除最危险的 fd、对象和异步操作生命周期问题。这是整个项目的最高优先级。
 
@@ -130,7 +130,7 @@ cmake/                    # CMake 辅助模块
 
 ### Phase 2：协议实现与功能闭环
 
-**状态：核心协议边界已完成，架构拆分待 Phase 4 推进。** 已修复 URI 到 `path_`/`query_` 的赋值、房间路由和前后端聊天字段不一致；请求行、Header、Body、静态文件和 WebSocket 帧均有显式上限。静态目录拒绝路径穿越，`HEAD` 不再发送 body，WebSocket 握手与掩码/控制帧校验已收紧，并新增真实服务的 HTTP 黑盒回归。HTTP parser/response writer/router 的独立模块化、WebSocket 分片和聊天室独立服务仍待完成。
+**状态：协议边界和基础聊天室权限已完成，架构拆分与端到端验证待补。** 已修复 URI 到 `path_`/`query_` 的赋值、字符串 `roomId` 契约、房间成员校验、断线清理和前端重连；请求行、Header、Body、静态文件和 WebSocket 帧均有显式上限。静态目录拒绝路径穿越，`HEAD` 不再发送 body，WebSocket 已支持文本分片、ping/pong、close 和非法帧拒绝。HTTP parser/response writer/router 的独立模块化、聊天室独立服务、数据库端到端和完整 WebSocket 黑盒测试仍待完成。
 
 **目标：** 将 HTTP、WebSocket 和聊天室变成经过黑盒测试的完整功能，而不是分散在 `HttpData` 中的条件分支。
 

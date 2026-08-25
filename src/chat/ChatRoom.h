@@ -3,6 +3,8 @@
 #include<memory>
 #include<unordered_map>
 #include<random>
+#include<string>
+#include<vector>
 
 class HttpData;
 
@@ -13,11 +15,12 @@ public:
     
     void join(std::shared_ptr<HttpData>);
     void leave(int fd);
+    bool contains(int fd) const;
     void broadcast(const std::string& msg, int skipFd);
     ChatRoom(std::string roomId,std::string name): roomId_(roomId),name_(name) {}
     
 private:
-    std::mutex mtx_;
+    mutable std::mutex mtx_;
     std::unordered_map<int, std::weak_ptr<HttpData>> users_;
 
 };

@@ -18,6 +18,7 @@
 #include <openssl/buffer.h>
 #include <set>
 #include <mutex>
+#include <string_view>
 #include "HttpData.h"
 #include "Channel.h"
 #include "EventLoop.h"
@@ -222,6 +223,17 @@ void HttpData::sendMsg(const std::string& msg) {
     });
 }
 
+void HttpData::closeWebSocket(std::uint16_t code, const std::string& reason) {
+  if (closeAfterWrite_ || closed_) return;
+  std::string payload;
+  payload.push_back(static_cast<char>((code >> 8) & 0xff));
+  payload.push_back(static_cast<char>(code & 0xff));
+  payload.append(reason.substr(0, 123));
+  closeAfterWrite_ = true;
+  connectionState_ = H_DISCONNECTING;
+  handleWriteInLoop(webSocketFrame(0x8, payload));
+}
+
  ProcessState HttpData::getRequestStatus(){
   return state_;
  }
@@ -295,6 +307,9 @@ void HttpData::reset() {
   headers_.clear();
   contentLength_ = 0;
   hasContentLength_ = false;
+  webSocketFragment_.clear();
+  webSocketFragmented_ = false;
+  closeAfterWrite_ = false;
   // keepAlive_ = false;
   if (timer_.lock()) {
     shared_ptr<TimerNode> my_timer(timer_.lock());
@@ -455,8 +470,10 @@ void HttpData::handleRead() {
 }
 
 void HttpData::handleWebSocketFrame() {
-  std::string input = inBuffer_.peekAllAsString();
-  while (input.size() >= 2) {
+  while (true) {
+    const std::string input = inBuffer_.peekAllAsString();
+    if (input.size() < 2) return;
+
     const auto* data = reinterpret_cast<const unsigned char*>(input.data());
     const bool fin = (data[0] & 0x80) != 0;
     const unsigned char opcode = data[0] & 0x0f;
@@ -464,9 +481,8 @@ void HttpData::handleWebSocketFrame() {
     std::uint64_t payloadLength = data[1] & 0x7f;
     std::size_t headerLength = 2;
 
-    if ((data[0] & 0x70) != 0 || !masked || (!fin && opcode >= 0x8)) {
-      error_ = true;
-      connectionState_ = H_DISCONNECTING;
+    if ((data[0] & 0x70) != 0 || !masked) {
+      closeWebSocket(1002, "protocol error");
       return;
     }
     if (payloadLength == 126) {
@@ -475,21 +491,25 @@ void HttpData::handleWebSocketFrame() {
       headerLength = 4;
     } else if (payloadLength == 127) {
       if (input.size() < 10) return;
+      if ((data[2] & 0x80) != 0) {
+        closeWebSocket(1002, "invalid length");
+        return;
+      }
       payloadLength = 0;
       for (int index = 0; index < 8; ++index) {
         payloadLength = (payloadLength << 8) | data[2 + index];
       }
       headerLength = 10;
     }
-    if (!fin || (opcode >= 0x8 && payloadLength > 125) ||
-        payloadLength > kMaxWebSocketPayloadBytes ||
-        input.size() < headerLength + 4 + payloadLength) {
-      if (payloadLength <= kMaxWebSocketPayloadBytes &&
-          input.size() < headerLength + 4 + payloadLength) return;
-      error_ = true;
-      connectionState_ = H_DISCONNECTING;
+
+    const bool control = opcode >= 0x8;
+    if ((control && (!fin || payloadLength > 125)) ||
+        payloadLength > kMaxWebSocketPayloadBytes) {
+      closeWebSocket(1002, "invalid frame");
       return;
     }
+    const std::uint64_t frameLength = headerLength + 4 + payloadLength;
+    if (input.size() < frameLength) return;
 
     const unsigned char* mask = data + headerLength;
     const unsigned char* body = mask + 4;
@@ -497,42 +517,84 @@ void HttpData::handleWebSocketFrame() {
     for (std::size_t index = 0; index < payload.size(); ++index) {
       payload[index] = static_cast<char>(body[index] ^ mask[index % 4]);
     }
-    inBuffer_.retrieve(static_cast<int>(headerLength + 4 + payloadLength));
+    inBuffer_.retrieve(static_cast<int>(frameLength));
 
     if (opcode == 0x8) {
-      connectionState_ = H_DISCONNECTING;
+      if (payload.size() == 1) {
+        closeWebSocket(1002, "invalid close payload");
+      } else {
+        closeAfterWrite_ = true;
+        connectionState_ = H_DISCONNECTING;
+        handleWriteInLoop(webSocketFrame(0x8, payload));
+      }
       return;
     }
     if (opcode == 0x9) {
       handleWriteInLoop(webSocketFrame(0xA, payload));
-    } else if (opcode == 0x1) {
-      try {
-        const json message = json::parse(payload);
-        const std::string type = message.value("type", "");
-        if (type == "join" && message.contains("roomId") &&
-            message["roomId"].is_string()) {
-          ChatManager::getInstance().joinRoom(message["roomId"].get<std::string>(),
-                                              shared_from_this());
-        } else if (type == "chat" && message.contains("roomId") &&
-                   message.contains("content") && message["roomId"].is_string() &&
-                   message["content"].is_string()) {
-          const std::string content = message["content"].get<std::string>();
-          if (content.size() <= 4096) {
-            ChatManager::getInstance().broadcastToRoom(
-                message["roomId"].get<std::string>(),
-                json{{"type", "chat"}, {"roomId", message["roomId"]},
-                     {"content", content}}.dump(), fd_);
-          }
-        }
-      } catch (const std::exception&) {
-        // Invalid application messages are ignored without terminating the socket.
-      }
-    } else if (opcode != 0xA) {
-      error_ = true;
-      connectionState_ = H_DISCONNECTING;
+      continue;
+    }
+    if (opcode == 0xA) continue;
+
+    if (opcode == 0x2) {
+      closeWebSocket(1003, "binary messages unsupported");
       return;
     }
-    input = inBuffer_.peekAllAsString();
+    if (opcode == 0x0) {
+      if (!webSocketFragmented_) {
+        closeWebSocket(1002, "unexpected continuation");
+        return;
+      }
+    } else if (opcode == 0x1) {
+      if (webSocketFragmented_) {
+        closeWebSocket(1002, "nested fragment");
+        return;
+      }
+      if (!fin) {
+        webSocketFragmented_ = true;
+        webSocketFragment_.clear();
+      }
+    } else {
+      closeWebSocket(1002, "unknown opcode");
+      return;
+    }
+
+    if (!fin || webSocketFragmented_) {
+      webSocketFragment_.append(payload);
+      if (webSocketFragment_.size() > kMaxWebSocketPayloadBytes) {
+        closeWebSocket(1009, "message too large");
+        return;
+      }
+      if (!fin) continue;
+      payload.swap(webSocketFragment_);
+      webSocketFragmented_ = false;
+    }
+
+    try {
+      const json message = json::parse(payload);
+      const std::string type = message.value("type", "");
+      if (type == "join" && message.contains("roomId") &&
+          message["roomId"].is_string()) {
+        const std::string roomId = message["roomId"].get<std::string>();
+        const bool joined = ChatManager::getInstance().joinRoom(roomId,
+                                                                 shared_from_this());
+        if (!joined) {
+          sendMsg(json{{"type", "error"}, {"code", "room_not_found"}}.dump());
+        }
+      } else if (type == "chat" && message.contains("roomId") &&
+                 message.contains("content") && message["roomId"].is_string() &&
+                 message["content"].is_string()) {
+        const std::string roomId = message["roomId"].get<std::string>();
+        const std::string content = message["content"].get<std::string>();
+        if (content.size() > 4096 ||
+            !ChatManager::getInstance().broadcastToRoom(
+                roomId, json{{"type", "chat"}, {"roomId", roomId},
+                             {"content", content}}.dump(), fd_)) {
+          sendMsg(json{{"type", "error"}, {"code", "room_membership_required"}}.dump());
+        }
+      }
+    } catch (const std::exception&) {
+      sendMsg(json{{"type", "error"}, {"code", "invalid_message"}}.dump());
+    }
   }
 }
 
@@ -566,7 +628,7 @@ void HttpData::handleWrite() {
             loop_->updatePoller(channel_);
         }
         // 如果是短连接，发完即关
-        if (!keepAlive_ && connectionState_ == H_DISCONNECTING) {
+        if (closeAfterWrite_ || (!keepAlive_ && connectionState_ == H_DISCONNECTING)) {
             handleClose();
         }
     }
@@ -750,7 +812,7 @@ AnalysisState HttpData::handleWebSocketHandshake() {
     return ANALYSIS_SUCCESS;
 }
 
-std::string HttpData::getQueryParam(const std::string& key) {
+std::string HttpData::getQueryParam(const std::string& key) const {
   std::size_t start = 0;
   while (start <= query_.size()) {
     const std::size_t end = query_.find('&', start);
@@ -796,10 +858,18 @@ AnalysisState HttpData::analysisRequest() {
     }
 
     if (path_ == "/room/create" && method_ == METHOD_POST) {
+        if (!authenticatedRequest()) {
+            sendResponse(401, "application/json", "{\"ok\":false,\"msg\":\"Unauthorized\"}");
+            return ANALYSIS_SUCCESS;
+        }
         RoomController::handleCreateRoom(shared_from_this());
         return ANALYSIS_SUCCESS;
-    } 
+    }
     if (path_ == "/room/list" && method_ == METHOD_GET) {
+        if (!authenticatedRequest()) {
+            sendResponse(401, "application/json", "{\"ok\":false,\"msg\":\"Unauthorized\"}");
+            return ANALYSIS_SUCCESS;
+        }
         RoomController::handleGetRoomList(shared_from_this());
         return ANALYSIS_SUCCESS;
     }
@@ -863,6 +933,20 @@ AnalysisState HttpData::handleStaticFile() {
   return ANALYSIS_SUCCESS;
 }
 
+bool HttpData::authenticatedRequest() const {
+  std::string token = getQueryParam("token");
+  if (token.empty()) {
+    const auto authorization = headers_.find("authorization");
+    constexpr std::string_view prefix = "Bearer ";
+    if (authorization != headers_.end() &&
+        authorization->second.size() > prefix.size() &&
+        authorization->second.compare(0, prefix.size(), prefix) == 0) {
+      token = authorization->second.substr(prefix.size());
+    }
+  }
+  return CryptoUtil::verifyAndExtractUsername(token).has_value();
+}
+
 void HttpData::handleError(int fd, int err_num, string short_msg) {
   short_msg = " " + short_msg;
   char send_buff[4096];
@@ -882,8 +966,10 @@ void HttpData::handleError(int fd, int err_num, string short_msg) {
   // 错误处理不考虑writen不完的情况
   sprintf(send_buff, "%s", header_buff.c_str());
   writen(fd, send_buff, strlen(send_buff));
-  sprintf(send_buff, "%s", body_buff.c_str());
-  writen(fd, send_buff, strlen(send_buff));
+  if (method_ != METHOD_HEAD) {
+    sprintf(send_buff, "%s", body_buff.c_str());
+    writen(fd, send_buff, strlen(send_buff));
+  }
 }
 
 void HttpData::handleClose() {
@@ -903,12 +989,9 @@ void HttpData::handleClose() {
     channel_->clearHolder();
   }
   seperateTimer();
-  for (const auto& [id, room] : rooms_) {
-    if (room) {
-      room->leave(fd_);
-    }
+  if (fd_ >= 0) {
+    ChatManager::getInstance().leaveUser(fd_);
   }
-  rooms_.clear();
   if (fd_ >= 0) {
     close(fd_);
     fd_ = -1;
@@ -1074,9 +1157,14 @@ void HttpData::handleWriteComplete(int bytes_written) {
              return;
         }
         error_ = true;
+        handleClose();
         return;
     }
     
     outBuffer_.retrieve(bytes_written);
+    if (outBuffer_.empty() && closeAfterWrite_) {
+      handleClose();
+      return;
+    }
     submitAsyncWrite(); // Continue writing if there's more data
 }

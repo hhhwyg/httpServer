@@ -15,6 +15,8 @@ void clearEnvironment() {
   unsetenv("HTTPSERVER_DB_PASSWORD");
   unsetenv("HTTPSERVER_DB_NAME");
   unsetenv("HTTPSERVER_DB_POOL_SIZE");
+  unsetenv("HTTPSERVER_MAX_FDS");
+  unsetenv("HTTPSERVER_IO_URING_QUEUE_SIZE");
 }
 
 void testDefaultsDisableSensitiveFeatures() {
@@ -42,11 +44,15 @@ void testCompleteConfigurationIsAccepted() {
   setenv("HTTPSERVER_DB_PASSWORD", "database-password", 1);
   setenv("HTTPSERVER_DB_NAME", "webserver", 1);
   setenv("HTTPSERVER_DB_POOL_SIZE", "2", 1);
+  setenv("HTTPSERVER_MAX_FDS", "20000", 1);
+  setenv("HTTPSERVER_IO_URING_QUEUE_SIZE", "1024", 1);
   const ServerConfig config = ServerConfig::LoadFromEnvironment();
   assert(config.valid());
   assert(config.jwt.enabled());
   assert(config.database.enabled());
   assert(config.database.poolSize == 2);
+  assert(config.limits.maxFds == 20000);
+  assert(config.limits.ioUringQueueSize == 1024);
   clearEnvironment();
 }
 

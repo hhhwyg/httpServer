@@ -7,6 +7,11 @@
 
 #include "Channel.h"
 
+struct PollerConfig {
+  int maxFds = 100000;
+  unsigned ioUringQueueSize = 4096;
+};
+
 enum class PollerBackend {
   kIoUring,
   kEpoll,
@@ -30,6 +35,7 @@ class Poller {
   virtual const char* name() const = 0;
 };
 
-std::unique_ptr<Poller> CreatePoller(PollerBackend backend);
+std::unique_ptr<Poller> CreatePoller(PollerBackend backend,
+                                     const PollerConfig& config = {});
 std::optional<PollerBackend> ParsePollerBackend(std::string_view value);
 const char* PollerBackendName(PollerBackend backend);

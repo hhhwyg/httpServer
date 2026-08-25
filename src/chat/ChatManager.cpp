@@ -1,5 +1,7 @@
 #include"ChatManager.h"
 
+#include <utility>
+
 
 std::string ChatManager::generateUniqueId() {
     // 使用 random_device 产生种子，mt19937 作为随机数引擎，并且加 thread_local 保证线程安全
@@ -30,24 +32,57 @@ std::shared_ptr<ChatRoom> ChatManager::getOrCreateRoom(std::string name) {
 }
 
 
-void ChatManager::joinRoom(std::string roomId, std::shared_ptr<HttpData> user) {
-        std::lock_guard<std::mutex> lock(mtx_);
-        if (rooms_.find(roomId) == rooms_.end()) {
-            return;
+bool ChatManager::joinRoom(const std::string& roomId, std::shared_ptr<HttpData> user) {
+        if (!user) return false;
+        std::shared_ptr<ChatRoom> room;
+        {
+            std::lock_guard<std::mutex> lock(mtx_);
+            const auto it = rooms_.find(roomId);
+            if (it == rooms_.end()) return false;
+            room = it->second;
         }
-        rooms_[roomId]->join(user);
+        room->join(std::move(user));
+        return true;
     }
 
 
-void ChatManager::broadcastToRoom(std::string roomId, const std::string& msg, int senderFd) {
+bool ChatManager::broadcastToRoom(const std::string& roomId, const std::string& msg,
+                                  int senderFd) {
     std::shared_ptr<ChatRoom> room;
     {
         std::lock_guard<std::mutex> lock(mtx_); // 保护 rooms_ 字典
-        if (rooms_.find(roomId) == rooms_.end()) return;
-        room = rooms_[roomId];
+        const auto it = rooms_.find(roomId);
+        if (it == rooms_.end()) return false;
+        room = it->second;
     }
-    // 将具体的广播任务交给房间对象自己处理
+    if (!room->contains(senderFd)) return false;
     room->broadcast(msg, senderFd);
+    return true;
+}
+
+bool ChatManager::isMember(const std::string& roomId, int fd) {
+    std::shared_ptr<ChatRoom> room;
+    {
+        std::lock_guard<std::mutex> lock(mtx_);
+        const auto it = rooms_.find(roomId);
+        if (it == rooms_.end()) return false;
+        room = it->second;
+    }
+    return room->contains(fd);
+}
+
+void ChatManager::leaveUser(int fd) {
+    std::vector<std::shared_ptr<ChatRoom>> rooms;
+    {
+        std::lock_guard<std::mutex> lock(mtx_);
+        rooms.reserve(rooms_.size());
+        for (const auto& [id, room] : rooms_) {
+            rooms.push_back(room);
+        }
+    }
+    for (const auto& room : rooms) {
+        room->leave(fd);
+    }
 }
 
 std::vector<std::shared_ptr<ChatRoom>> ChatManager::getAllRooms() {

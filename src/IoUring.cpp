@@ -4,6 +4,7 @@
 #include <cstring>
 #include <poll.h>
 #include <sys/epoll.h>
+#include <vector>
 
 #include "base/Logging.h"
 
@@ -51,8 +52,8 @@ __uint32_t IoUring::pollToEpollEvents(short pollEvents) {
   return epollEvents;
 }
 
-IoUring::IoUring() {
-  const int result = io_uring_queue_init(kRingSize, &ring_, 0);
+IoUring::IoUring(const PollerConfig& config) : queueSize_(config.ioUringQueueSize) {
+  const int result = io_uring_queue_init(queueSize_, &ring_, 0);
   if (result < 0) {
     LOG << "io_uring_queue_init failed: " << std::strerror(-result);
     std::abort();
@@ -96,6 +97,22 @@ void IoUring::cancelPoll(int fd) {
   io_uring_prep_poll_remove(sqe, *token);
   // Cancellation CQEs have no user callback. The target operation's CQE is
   // still consumed through its own token and releases the old Channel safely.
+  io_uring_sqe_set_data64(sqe, 0);
+}
+
+void IoUring::cancelOperation(UringOp type, int fd) {
+  const auto token = operations_.operationToken(type, fd);
+  if (!token.has_value()) {
+    return;
+  }
+
+  io_uring_sqe* sqe = getSqe(&ring_);
+  if (sqe == nullptr) {
+    LOG << "io_uring SQ full, cannot cancel operation for fd=" << fd;
+    return;
+  }
+
+  io_uring_prep_cancel64(sqe, *token, 0);
   io_uring_sqe_set_data64(sqe, 0);
 }
 
@@ -147,6 +164,8 @@ void IoUring::epoll_del(SP_Channel request) {
   // 先失活再取消：已经在内核中的 CQE 仍可能返回，但不会再驱动回调。
   request->deactivate();
   cancelPoll(fd);
+  cancelOperation(UringOp::kRead, fd);
+  cancelOperation(UringOp::kWrite, fd);
   connectionOwners_.erase(request.get());
 
   const auto channelIt = channels_.find(fd);
@@ -218,8 +237,8 @@ void IoUring::processEvents() {
 
     // 已经等到至少一个 CQE 后，把当前可见的 CQE 一次取出，减少
     // EventLoop 在高并发下反复进入内核的次数。
-    io_uring_cqe* cqes[kRingSize];
-    const unsigned count = io_uring_peek_batch_cqe(&ring_, cqes, kRingSize);
+    std::vector<io_uring_cqe*> cqes(queueSize_);
+    const unsigned count = io_uring_peek_batch_cqe(&ring_, cqes.data(), queueSize_);
     for (unsigned index = 0; index < count; ++index) {
       const std::uint64_t token = io_uring_cqe_get_data64(cqes[index]);
       const int result = cqes[index]->res;

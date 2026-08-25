@@ -65,6 +65,9 @@ cmake --build build/debug --target LoggingStressTest --parallel
 ./build/debug/tests/LoggingStressTest
 ```
 
+聊天室成员资格和断线清理由 `chat.room_membership` 单元测试覆盖。配置测试同时覆盖
+`HTTPSERVER_MAX_FDS` 和 `HTTPSERVER_IO_URING_QUEUE_SIZE` 的环境变量解析。
+
 HTTP 示例客户端也是可选目标：
 
 ```bash
@@ -75,6 +78,12 @@ cmake --build build/debug --target HTTPClient --parallel
 ## 常用选项
 
 `HTTPSERVER_WARNINGS_AS_ERRORS=ON` 用于新增代码已无警告的分支；在清理历史警告前，默认关闭。`BUILD_TESTING=OFF` 可用于仅交付服务器的最小构建。
+
+开发容器包含在 `Dockerfile` 和 `docker-compose.yml` 中。它们使用仅供本地开发的示例凭据，不应直接用于部署：
+
+```bash
+docker compose up --build builder mysql
+```
 
 ## 失败排查
 
