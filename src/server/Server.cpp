@@ -8,7 +8,7 @@
 #include "HttpData.h"
 #include "httpserver/base/Logging.h"
 
-Server::Server(EventLoop* loop, int threadNum, int port,
+Server::Server(httpserver::EventLoop* loop, int threadNum, int port,
                httpserver::PollerBackend backend,
                httpserver::PollerConfig config)
     : loop_(loop),
@@ -48,7 +48,7 @@ void Server::handNewConn() {
   int accept_fd = 0;
   while ((accept_fd = accept(listenFd_, (struct sockaddr *)&client_addr,
                              &client_addr_len)) > 0) {
-    EventLoop *loop = eventLoopThreadPool_->getNextLoop();
+    httpserver::EventLoop* loop = eventLoopThreadPool_->getNextLoop();
     // LOG << "New connection from " << inet_ntoa(client_addr.sin_addr) << ":" << ntohs(client_addr.sin_port); // removed: fires per-connection, locks AsyncLogging mutex
     // cout << "new connection" << endl;
     // cout << inet_ntoa(client_addr.sin_addr) << endl;

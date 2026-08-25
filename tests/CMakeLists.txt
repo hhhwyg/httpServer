@@ -6,7 +6,10 @@ add_test(NAME base.object_pool COMMAND ObjectPoolTest)
 set_tests_properties(base.object_pool PROPERTIES LABELS "unit;base")
 
 add_executable(UringOperationRegistryTest base/UringOperationRegistryTest.cpp)
-target_include_directories(UringOperationRegistryTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_include_directories(UringOperationRegistryTest PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/src
+)
 target_link_libraries(UringOperationRegistryTest PRIVATE httpserver_options)
 add_test(NAME base.uring_operation_registry COMMAND UringOperationRegistryTest)
 set_tests_properties(base.uring_operation_registry PROPERTIES LABELS "unit;uring")
@@ -55,6 +58,12 @@ target_include_directories(HttpRequestParserTest PRIVATE ${PROJECT_SOURCE_DIR}/i
 target_link_libraries(HttpRequestParserTest PRIVATE httpserver::core)
 add_test(NAME httpdata.request_parser COMMAND HttpRequestParserTest)
 set_tests_properties(httpdata.request_parser PROPERTIES LABELS "unit;protocol")
+
+add_executable(HttpResponseWriterTest httpdata/HttpResponseWriterTest.cpp)
+target_include_directories(HttpResponseWriterTest PRIVATE ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(HttpResponseWriterTest PRIVATE httpserver::core)
+add_test(NAME httpdata.response_writer COMMAND HttpResponseWriterTest)
+set_tests_properties(httpdata.response_writer PROPERTIES LABELS "unit;protocol")
 
 add_executable(StaticFileServiceTest httpdata/StaticFileServiceTest.cpp)
 target_include_directories(StaticFileServiceTest PRIVATE ${PROJECT_SOURCE_DIR}/include)

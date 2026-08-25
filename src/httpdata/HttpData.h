@@ -10,11 +10,11 @@
 #include "base/ChainBuffer.h"
 #include "Timer.h"
 #include "httpserver/transport/Channel.h"
+#include "httpserver/transport/EventLoop.h"
 #include "httpserver/protocol/StaticFile.h"
 
 
 
-class EventLoop;
 class TimerNode;
 
 enum ProcessState {
@@ -62,7 +62,7 @@ enum HttpVersion { HTTP_10 = 1, HTTP_11 };
 
 class HttpData : public std::enable_shared_from_this<HttpData> {
  public:
-  HttpData(EventLoop *loop, int connfd);
+  HttpData(httpserver::EventLoop* loop, int connfd);
   ~HttpData() {
     if (fd_ >= 0) close(fd_);
   }
@@ -72,7 +72,7 @@ class HttpData : public std::enable_shared_from_this<HttpData> {
     timer_ = mtimer;
   }
   httpserver::ChannelPtr getChannel() { return channel_; }
-  EventLoop *getLoop() { return loop_; }
+  httpserver::EventLoop* getLoop() { return loop_; }
   void handleClose();
   void newEvent();
   ProcessState getRequestStatus();
@@ -85,7 +85,7 @@ class HttpData : public std::enable_shared_from_this<HttpData> {
    void init();
    
   private:
-  EventLoop *loop_;
+  httpserver::EventLoop* loop_;
   httpserver::ChannelPtr channel_;
   httpserver::StaticFileService staticFileService_;
   int fd_;

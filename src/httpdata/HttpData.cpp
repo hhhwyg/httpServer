@@ -4,7 +4,7 @@
 #include <functional>
 #include <string_view>
 #include "HttpData.h"
-#include "EventLoop.h"
+#include "httpserver/transport/EventLoop.h"
 #include "Util.h"
 #include "time.h"
 #include "CryptoUtil.h"
@@ -12,6 +12,7 @@
 #include "httpserver/application/ApplicationRouter.h"
 #include "httpserver/application/ChatApplication.h"
 #include "httpserver/protocol/HttpRequest.h"
+#include "httpserver/protocol/HttpResponse.h"
 #include "httpserver/protocol/WebSocket.h"
 const __uint32_t DEFAULT_EVENT = EPOLLIN | EPOLLET | EPOLLONESHOT;
 const int DEFAULT_EXPIRED_TIME = 2000;              // ms
@@ -114,28 +115,12 @@ char favicon[555] = {
     'N',    'D',    '\xAE', 'B',    '\x60', '\x82',
 };
 void HttpData::sendResponse(int status, const std::string& type, const std::string& body) {
-    // 预分配 Header 空间，避免多次扩容
-    std::string header;
-    header.reserve(256); 
-    
-    const char* reason = status == 200 ? "OK" : status == 201 ? "Created" :
-                         status == 400 ? "Bad Request" : status == 401 ? "Unauthorized" :
-                         status == 404 ? "Not Found" : status == 405 ? "Method Not Allowed" :
-                         status == 413 ? "Payload Too Large" : "Service Unavailable";
-    header += "HTTP/1.1 " + std::to_string(status) + " " + reason + "\r\n";
-    header += "Content-Type: " + type + "\r\n";
-    header += "Content-Length: " + std::to_string(body.size()) + "\r\n";
-    header += "Connection: " + (keepAlive_ ? std::string("Keep-Alive") : std::string("close")) + "\r\n";
-    if (keepAlive_) header += "Keep-Alive: timeout=20\r\n";
-    header += "\r\n";
-
-    // 2. 优化：不再进行 outBuffer_ = header + body 的大字符串拼接
-    // 建议将 outBuffer_ 改为支持多块数据的结构，或者直接存入专门的响应队列
-    outBuffer_.append(header);
+    outBuffer_.append(httpserver::HttpResponseWriter::SerializeHead(
+        status, type, body.size(), keepAlive_));
     if (method_ != METHOD_HEAD) {
       outBuffer_.append(body);
     }
-    submitAsyncWrite(); // 开始发送
+    submitAsyncWrite();
 }
 
 void HttpData::handleWriteInLoop(const std::string& msg) {
@@ -181,7 +166,7 @@ void HttpData::closeWebSocket(std::uint16_t code, const std::string& reason) {
   }
 
 
-HttpData::HttpData(EventLoop *loop, int connfd)
+HttpData::HttpData(httpserver::EventLoop* loop, int connfd)
     : loop_(loop),
       channel_(new httpserver::Channel(loop, connfd)),
       fd_(connfd),
@@ -248,7 +233,7 @@ void HttpData::reset() {
   closeAfterWrite_ = false;
   // keepAlive_ = false;
   if (timer_.lock()) {
-    shared_ptr<TimerNode> my_timer(timer_.lock());
+    std::shared_ptr<TimerNode> my_timer(timer_.lock());
     my_timer->clearReq();
     timer_.reset();
   }
@@ -257,7 +242,7 @@ void HttpData::reset() {
 void HttpData::seperateTimer() {
   // cout << "seperateTimer" << endl;
   if (timer_.lock()) {
-    shared_ptr<TimerNode> my_timer(timer_.lock());
+    std::shared_ptr<TimerNode> my_timer(timer_.lock());
     my_timer->clearReq();
     timer_.reset();
   }
@@ -715,28 +700,26 @@ AnalysisState HttpData::handleStaticFile() {
     return ANALYSIS_SUCCESS;
   }
 
-  std::string header = "HTTP/1.1 200 OK\r\nContent-Type: " + file.contentType +
-      "\r\nContent-Length: " + std::to_string(file.contentLength) +
-      "\r\nConnection: " + (keepAlive_ ? "Keep-Alive" : "close") + "\r\n\r\n";
-  outBuffer_.append(header);
+  outBuffer_.append(httpserver::HttpResponseWriter::SerializeHead(
+      200, file.contentType, file.contentLength, keepAlive_));
   if (method_ == METHOD_GET) outBuffer_.append(file.body);
   submitAsyncWrite();
   return ANALYSIS_SUCCESS;
 }
 
-void HttpData::handleError(int fd, int err_num, string short_msg) {
+void HttpData::handleError(int fd, int err_num, std::string short_msg) {
   short_msg = " " + short_msg;
   char send_buff[4096];
-  string body_buff, header_buff;
+  std::string body_buff, header_buff;
   body_buff += "<html><title>哎~出错了</title>";
   body_buff += "<body bgcolor=\"ffffff\">";
-  body_buff += to_string(err_num) + short_msg;
+  body_buff += std::to_string(err_num) + short_msg;
   body_buff += "<hr><em> LinYa's Web Server</em>\n</body></html>";
 
-  header_buff += "HTTP/1.1 " + to_string(err_num) + short_msg + "\r\n";
+  header_buff += "HTTP/1.1 " + std::to_string(err_num) + short_msg + "\r\n";
   header_buff += "Content-Type: text/html\r\n";
   header_buff += "Connection: Close\r\n";
-  header_buff += "Content-Length: " + to_string(body_buff.size()) + "\r\n";
+  header_buff += "Content-Length: " + std::to_string(body_buff.size()) + "\r\n";
   header_buff += "Server: LinYa's Web Server\r\n";
   ;
   header_buff += "\r\n";
@@ -756,7 +739,7 @@ void HttpData::handleClose() {
 
   // Keep the object alive while detaching the timer. TimerNode owns a shared
   // pointer to HttpData and clearReq() can otherwise release the final owner.
-  const shared_ptr<HttpData> guard(shared_from_this());
+  const std::shared_ptr<HttpData> guard(shared_from_this());
   if (channel_) {
     if (loop_) {
       loop_->removeFromPoller(channel_);

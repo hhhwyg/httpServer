@@ -1,21 +1,21 @@
 #pragma once
 #include <memory>
-#include "EventLoop.h"
+#include "httpserver/transport/EventLoop.h"
 #include "EventLoopThreadPool.h"
 #include "httpserver/transport/Channel.h"
 
 class Server {
  public:
-  Server(EventLoop* loop, int threadNum, int port,
+  Server(httpserver::EventLoop* loop, int threadNum, int port,
          httpserver::PollerBackend backend, httpserver::PollerConfig config);
   ~Server() {}
-  EventLoop *getLoop() const { return loop_; }
+  httpserver::EventLoop* getLoop() const { return loop_; }
   void start();
   void handNewConn();
   void handThisConn() { loop_->updatePoller(acceptChannel_); }
 
  private:
-  EventLoop *loop_;
+  httpserver::EventLoop* loop_;
   int threadNum_;
   std::unique_ptr<EventLoopThreadPool> eventLoopThreadPool_;
   bool started_;

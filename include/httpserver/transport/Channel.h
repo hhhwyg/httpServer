@@ -8,17 +8,18 @@
 
 #include <sys/epoll.h>
 
-class EventLoop;
 class HttpData;
 
 namespace httpserver {
+
+class EventLoop;
 
 class Channel {
  private:
   using Callback = std::function<void()>;
   using AsyncCallback = std::function<void(int)>;
 
-  ::EventLoop* loop_;
+  EventLoop* loop_;
   int fd_;
   std::uint32_t events_;
   std::uint32_t revents_;
@@ -34,8 +35,8 @@ class Channel {
   AsyncCallback asyncWriteHandler_;
 
  public:
-  Channel(::EventLoop* loop);
-  Channel(::EventLoop* loop, int fd);
+  Channel(EventLoop* loop);
+  Channel(EventLoop* loop, int fd);
   ~Channel();
 
   int getFd();

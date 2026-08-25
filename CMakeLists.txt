@@ -35,6 +35,7 @@ set(HTTPSERVER_CORE_SOURCES
     src/eventloop/EventLoopThreadPool.cpp
     src/httpdata/HttpData.cpp
     src/httpdata/HttpRequest.cpp
+    src/httpdata/HttpResponse.cpp
     src/httpdata/MimeType.cpp
     src/httpdata/StaticFile.cpp
     src/httpdata/WebSocket.cpp
@@ -118,6 +119,7 @@ target_link_libraries(httpserver_core
 add_executable(WebServer src/Main.cpp)
 target_include_directories(WebServer PRIVATE
     ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/src
     ${HTTPSERVER_LEGACY_INCLUDE_DIRS}
 )
 target_link_libraries(WebServer PRIVATE httpserver::core)

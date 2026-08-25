@@ -1,10 +1,16 @@
-#include "EventLoop.h"
+#include "httpserver/transport/EventLoop.h"
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
+#include <unistd.h>
 #include <iostream>
 #include<thread>
+#include <cassert>
+#include <mutex>
 #include "Util.h"
+#include "base/CurrentThread.h"
 #include "httpserver/base/Logging.h"
+
+namespace httpserver {
 
 __thread EventLoop* t_loopInThisThread = 0;
 
@@ -17,16 +23,15 @@ int createEventfd() {
   return evtfd;
 }//创建了一个可以被用户态程序用作 等待/通知 机制的文件描述符。
 
-EventLoop::EventLoop(httpserver::PollerBackend backend,
-                     const httpserver::PollerConfig& config)
+EventLoop::EventLoop(PollerBackend backend, const PollerConfig& config)
     : looping_(false),
-      poller_(httpserver::CreatePoller(backend, config)),
+      poller_(CreatePoller(backend, config)),
       wakeupFd_(createEventfd()),
       quit_(false),
       eventHandling_(false),
       callingPendingFunctors_(false),
       threadId_(CurrentThread::tid()),
-      pwakeupChannel_(new httpserver::Channel(this, wakeupFd_)) {
+      pwakeupChannel_(new Channel(this, wakeupFd_)) {
   if (t_loopInThisThread) {
     // LOG << "Another EventLoop " << t_loopInThisThread << " exists in this
     // thread " << threadId_;
@@ -78,9 +83,43 @@ void EventLoop::runInLoop(Functor&& cb) {
     queueInLoop(std::move(cb));
 }
 
+bool EventLoop::isInLoopThread() const {
+  return threadId_ == CurrentThread::tid();
+}
+
+void EventLoop::assertInLoopThread() {
+  assert(isInLoopThread());
+}
+
+void EventLoop::shutdown(ChannelPtr channel) {
+  shutDownWR(channel->getFd());
+}
+
+void EventLoop::removeFromPoller(ChannelPtr channel) {
+  poller_->epoll_del(channel);
+}
+
+void EventLoop::updatePoller(ChannelPtr channel, int timeout) {
+  poller_->epoll_mod(channel, timeout);
+}
+
+void EventLoop::addToPoller(ChannelPtr channel, int timeout) {
+  poller_->epoll_add(channel, timeout);
+}
+
+void EventLoop::submitRead(ChannelPtr channel, void* buffer, std::size_t len) {
+  poller_->submitRead(channel, buffer, len);
+}
+
+void EventLoop::submitWrite(ChannelPtr channel,
+                            const void* buffer,
+                            std::size_t len) {
+  poller_->submitWrite(channel, buffer, len);
+}
+
 void EventLoop::queueInLoop(Functor&& cb) {
   {
-    MutexLockGuard lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
     pendingFunctors_.emplace_back(std::move(cb));
   }
 
@@ -110,7 +149,7 @@ void EventLoop::doPendingFunctors() {
   callingPendingFunctors_ = true;
 
   {
-    MutexLockGuard lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
     functors.swap(pendingFunctors_);
   }
 
@@ -124,3 +163,5 @@ void EventLoop::quit() {
     wakeup();
   }
 }
+
+}  // namespace httpserver

@@ -1,4 +1,5 @@
 #include "EventLoopThread.h"
+#include <cassert>
 #include <functional>
 
 EventLoopThread::EventLoopThread(httpserver::PollerBackend backend,
@@ -19,7 +20,7 @@ EventLoopThread::~EventLoopThread() {
   }
 }
 
-EventLoop* EventLoopThread::startLoop() {
+httpserver::EventLoop* EventLoopThread::startLoop() {
   assert(!thread_.started());
   thread_.start();
   {
@@ -31,7 +32,7 @@ EventLoop* EventLoopThread::startLoop() {
 }
 
 void EventLoopThread::threadFunc() {
-  EventLoop loop(backend_, config_);
+  httpserver::EventLoop loop(backend_, config_);
 
   {
     MutexLockGuard lock(mutex_);

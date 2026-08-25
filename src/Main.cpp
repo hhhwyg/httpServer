@@ -2,7 +2,7 @@
 #include <string>
 #include"SqlConnPool.h"
 #include "httpserver/config/ServerConfig.h"
-#include "EventLoop.h"
+#include "httpserver/transport/EventLoop.h"
 #include "Server.h"
 #include "httpserver/base/Logging.h"
 #include "CryptoUtil.h"
@@ -79,7 +79,7 @@ int main(int argc, char* argv[]) {
   }
   LOG << "Starting server with " << httpserver::PollerBackendName(backend)
       << " backend";
-  EventLoop mainLoop(backend, pollerConfig);  // 主线程只负责接收 socket 连接
+  httpserver::EventLoop mainLoop(backend, pollerConfig);  // 主线程只负责接收 socket 连接
   Server myHTTPServer(&mainLoop, threadNum, port, backend, pollerConfig);
   myHTTPServer.start();
   mainLoop.loop();

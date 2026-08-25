@@ -10,7 +10,7 @@ app (Main, Server)
 ```
 
 `include/httpserver/` contains the public boundary. Phase 4 publishes
-`httpserver::Channel`, `httpserver::Poller`,
+`httpserver::EventLoop`, `httpserver::Channel`, `httpserver::Poller`,
 `httpserver::PollerBackend`, `httpserver::PollerConfig`,
 `httpserver::ServerConfig`, `httpserver::Logger`, and
 `httpserver::LogStream`, along with protocol and application interfaces.

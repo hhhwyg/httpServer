@@ -18,6 +18,10 @@ Request-line, header, and query parsing now live behind
 `include/httpserver/protocol/HttpRequest.h`; the connection session only
 translates parser results into its existing state machine.
 
+HTTP status-line and response-header serialization live behind
+`include/httpserver/protocol/HttpResponse.h`; `HttpData` only appends the
+serialized head/body to its transport buffer and schedules the write.
+
 Static file path validation, size limits, loading, and MIME selection live
 behind `include/httpserver/protocol/StaticFile.h`; `HttpData` only maps the
 result to an HTTP response and schedules the write.
@@ -42,9 +46,10 @@ Chat message validation and room membership operations live behind
 passes decoded message payloads in and supplies a callback for outbound
 messages; room cleanup is likewise delegated when the session closes.
 
-The public transport slices expose poller selection, channels, event-loop
-transport, and server capacity configuration. The former forwarding headers
-under `src/` were removed after the in-repository consumers migrated.
+The public transport slices expose event-loop ownership, poller selection,
+channels, and server capacity configuration through
+`include/httpserver/transport`. The former forwarding headers under `src/`
+were removed after the in-repository consumers migrated.
 
 `src/epoll/` and `src/eventloop/EventLoopThreadPool.*` are active transport
 implementations. The legacy `src/thread/ThreadPool.*` is retained as an

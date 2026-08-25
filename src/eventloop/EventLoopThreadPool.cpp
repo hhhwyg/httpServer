@@ -1,6 +1,9 @@
 #include "EventLoopThreadPool.h"
 
-EventLoopThreadPool::EventLoopThreadPool(EventLoop *baseLoop, int numThreads,
+#include <cassert>
+
+EventLoopThreadPool::EventLoopThreadPool(httpserver::EventLoop* baseLoop,
+                                         int numThreads,
                                          httpserver::PollerBackend backend,
                                          httpserver::PollerConfig config)
     : baseLoop_(baseLoop),
@@ -26,10 +29,10 @@ void EventLoopThreadPool::start() {
   }
 }
 //负载均衡
-EventLoop *EventLoopThreadPool::getNextLoop() {
+httpserver::EventLoop* EventLoopThreadPool::getNextLoop() {
   baseLoop_->assertInLoopThread();
   assert(started_);
-  EventLoop *loop = baseLoop_;
+  httpserver::EventLoop* loop = baseLoop_;
   if (!loops_.empty()) {
     loop = loops_[next_];
     next_ = (next_ + 1) % numThreads_;

@@ -1,5 +1,5 @@
 #pragma once
-#include "EventLoop.h"
+#include "httpserver/transport/EventLoop.h"
 #include "base/Condition.h"
 #include "base/MutexLock.h"
 #include "base/Thread.h"
@@ -11,11 +11,11 @@ class EventLoopThread : noncopyable {
   EventLoopThread(httpserver::PollerBackend backend,
                   httpserver::PollerConfig config);
   ~EventLoopThread();
-  EventLoop* startLoop();
+  httpserver::EventLoop* startLoop();
 
  private:
   void threadFunc();
-  EventLoop* loop_;
+  httpserver::EventLoop* loop_;
   httpserver::PollerBackend backend_;
   httpserver::PollerConfig config_;
   bool exiting_;

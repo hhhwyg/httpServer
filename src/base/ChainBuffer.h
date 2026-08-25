@@ -131,7 +131,8 @@ public:
         vec[1].iov_base = extrabuf;
         vec[1].iov_len = sizeof(extrabuf);
         
-        const int iovcnt = (writable < sizeof(extrabuf)) ? 2 : 1;
+        const int iovcnt =
+            (writable < static_cast<int>(sizeof(extrabuf))) ? 2 : 1;
         const ssize_t n = readv(fd, vec, iovcnt);
         
         if (n < 0) {
