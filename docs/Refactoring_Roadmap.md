@@ -169,7 +169,7 @@ cmake/                    # CMake 辅助模块
 
 ### Phase 4：模块边界与代码质量
 
-**状态：进行中。本轮已完成 transport/poller 与 `HttpData` 的类型解耦、Poller 接口命名统一、定时器回调化和 Channel 生命周期单测；应用层接口继续依赖 `HttpData`，历史代码格式与 clang-tidy 告警仍需清理。**
+**状态：核心模块边界迁移已完成，工具链验证待补。本轮已完成 transport/poller 与 `HttpData` 的类型解耦、Poller 接口命名统一、定时器回调化和 Channel 生命周期单测；应用层路由、控制器和聊天室已改用请求/响应/连接会话抽象，`HttpData` 仅保留为传输适配器。由于当前 WSL 环境未安装 `clang-format`/`clang-tidy`，对应的格式与静态检查仍需在 CI 或安装工具后完成。**
 
 **目标：** 在 Phase 1-3 的测试保护下，完成可维护的模块拆分和风格统一。
 

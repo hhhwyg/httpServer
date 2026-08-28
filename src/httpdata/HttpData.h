@@ -11,6 +11,7 @@
 #include "httpserver/transport/Channel.h"
 #include "httpserver/transport/EventLoop.h"
 #include "httpserver/protocol/StaticFile.h"
+#include "httpserver/application/ApplicationContext.h"
 
 
 
@@ -57,7 +58,8 @@ enum HttpVersion { HTTP_10 = 1, HTTP_11 };
 
 
 
-class HttpData : public std::enable_shared_from_this<HttpData> {
+class HttpData : public std::enable_shared_from_this<HttpData>,
+                 public httpserver::ConnectionSession {
  public:
   HttpData(httpserver::EventLoop* loop, int connfd);
   ~HttpData() {
@@ -76,6 +78,11 @@ class HttpData : public std::enable_shared_from_this<HttpData> {
   void sendResponse(int status, const std::string& type, const std::string& body);
   int getFd() {return fd_;}
   void sendMsg(const std::string& msg);
+  int fd() const override { return fd_; }
+  void sendMessage(std::string_view message) override {
+    sendMsg(std::string(message));
+  }
+
    void init();
    
   private:

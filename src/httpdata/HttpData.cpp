@@ -670,8 +670,14 @@ AnalysisState HttpData::analysisRequest() {
         method = "HEAD";
         break;
     }
-    if (httpserver::ApplicationRouter::Dispatch(
-            shared_from_this(), method, uri_, query_, headers_) ==
+    const httpserver::ApplicationRequest request{
+        std::string(method), uri_, query_, headers_, inBuffer_.peekAllAsString()};
+    const httpserver::ResponseSender sendResponse =
+        [self = shared_from_this()](int status, std::string_view type,
+                                    std::string_view body) {
+          self->sendResponse(status, std::string(type), std::string(body));
+        };
+    if (httpserver::ApplicationRouter::Dispatch(request, sendResponse) ==
         httpserver::RouteResult::kHandled) {
         return ANALYSIS_SUCCESS;
     }

@@ -21,7 +21,7 @@ namespace httpserver {
 void ChatApplication::HandleMessage(
     std::string_view payload,
     int senderFd,
-    const std::shared_ptr<::HttpData>& user,
+    const std::shared_ptr<ConnectionSession>& user,
     const SendMessage& sendMessage) {
   try {
     const json message = json::parse(payload);

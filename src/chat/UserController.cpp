@@ -1,7 +1,5 @@
 #include "UserController.h"
 
-#include "httpdata/HttpData.h"
-
 #include <array>
 #include <cctype>
 #include <optional>
@@ -63,9 +61,9 @@ void bindString(MYSQL_BIND* binding, const std::string& value,
 }
 
 std::optional<std::pair<std::string, std::string>> parseCredentials(
-    const std::shared_ptr<HttpData>& httpData) {
+    const ApplicationRequest& request) {
   try {
-    const json body = json::parse(httpData->getInBuffer().peekAllAsString());
+    const json body = json::parse(request.body);
     if (!body.is_object() || !body.contains("username") ||
         !body.contains("password") || !body["username"].is_string() ||
         !body["password"].is_string()) {
@@ -159,57 +157,59 @@ bool checkLogin(const std::string& username, const std::string& password) {
       password, std::string(passwordHash.data(), passwordHashLength));
 }
 
-void handleRegister(std::shared_ptr<HttpData> httpData) {
+void handleRegister(const ApplicationRequest& request,
+                    const ResponseSender& sendResponse) {
   if (!SqlConnPool::Instance()->IsInitialized()) {
-    httpData->sendResponse(503, "application/json",
-                           "{\"ok\":false,\"msg\":\"Registration unavailable\"}");
+    sendResponse(503, "application/json",
+                 "{\"ok\":false,\"msg\":\"Registration unavailable\"}");
     return;
   }
 
-  const auto credentials = parseCredentials(httpData);
+  const auto credentials = parseCredentials(request);
   if (!credentials.has_value() || !isValidUsername(credentials->first) ||
       !isValidPassword(credentials->second)) {
-    httpData->sendResponse(400, "application/json",
-                           "{\"ok\":false,\"msg\":\"Invalid credentials\"}");
+    sendResponse(400, "application/json",
+                 "{\"ok\":false,\"msg\":\"Invalid credentials\"}");
     return;
   }
   if (!registerUser(credentials->first, credentials->second)) {
     // Do not distinguish duplicate users from database failures in the API.
-    httpData->sendResponse(400, "application/json",
-                           "{\"ok\":false,\"msg\":\"Registration failed\"}");
+    sendResponse(400, "application/json",
+                 "{\"ok\":false,\"msg\":\"Registration failed\"}");
     return;
   }
 
-  httpData->sendResponse(201, "application/json", "{\"ok\":true}");
+  sendResponse(201, "application/json", "{\"ok\":true}");
 }
 
-void handleLogin(std::shared_ptr<HttpData> httpData) {
+void handleLogin(const ApplicationRequest& request,
+                 const ResponseSender& sendResponse) {
   if (!SqlConnPool::Instance()->IsInitialized()) {
-    httpData->sendResponse(503, "application/json",
-                           "{\"ok\":false,\"msg\":\"Login unavailable\"}");
+    sendResponse(503, "application/json",
+                 "{\"ok\":false,\"msg\":\"Login unavailable\"}");
     return;
   }
   if (!CryptoUtil::jwtEnabled()) {
-    httpData->sendResponse(503, "application/json",
-                           "{\"ok\":false,\"msg\":\"Authentication unavailable\"}");
+    sendResponse(503, "application/json",
+                 "{\"ok\":false,\"msg\":\"Authentication unavailable\"}");
     return;
   }
 
-  const auto credentials = parseCredentials(httpData);
+  const auto credentials = parseCredentials(request);
   if (!credentials.has_value() || !checkLogin(credentials->first, credentials->second)) {
-    httpData->sendResponse(401, "application/json",
-                           "{\"ok\":false,\"msg\":\"Invalid username or password\"}");
+    sendResponse(401, "application/json",
+                 "{\"ok\":false,\"msg\":\"Invalid username or password\"}");
     return;
   }
 
   const std::string token = CryptoUtil::generateJWT(credentials->first);
   if (token.empty()) {
-    httpData->sendResponse(503, "application/json",
-                           "{\"ok\":false,\"msg\":\"Authentication unavailable\"}");
+    sendResponse(503, "application/json",
+                 "{\"ok\":false,\"msg\":\"Authentication unavailable\"}");
     return;
   }
   const json response = {{"ok", true}, {"token", token}};
-  httpData->sendResponse(200, "application/json", response.dump());
+  sendResponse(200, "application/json", response.dump());
 }
 
 }  // namespace httpserver::UserController

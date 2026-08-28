@@ -1,9 +1,8 @@
 #pragma once
 #include"ChatRoom.h"
 #include"Util.h"
+#include"httpserver/application/ApplicationContext.h"
 #include"vector"
-
-class HttpData;
 
 class ChatManager {
 public:
@@ -11,7 +10,8 @@ public:
         static ChatManager instance;
         return instance;
     }
-    bool joinRoom(const std::string& roomId, std::shared_ptr<HttpData> user);
+    bool joinRoom(const std::string& roomId,
+                  std::shared_ptr<httpserver::ConnectionSession> user);
     bool broadcastToRoom(const std::string& roomId, const std::string& msg,
                          int senderFd);
     bool isMember(const std::string& roomId, int fd);

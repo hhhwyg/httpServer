@@ -32,7 +32,9 @@ std::shared_ptr<ChatRoom> ChatManager::getOrCreateRoom(std::string name) {
 }
 
 
-bool ChatManager::joinRoom(const std::string& roomId, std::shared_ptr<HttpData> user) {
+bool ChatManager::joinRoom(
+    const std::string& roomId,
+    std::shared_ptr<httpserver::ConnectionSession> user) {
         if (!user) return false;
         std::shared_ptr<ChatRoom> room;
         {

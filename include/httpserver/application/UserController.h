@@ -1,14 +1,15 @@
 #pragma once
 
-#include <memory>
 #include <string>
 
-class HttpData;
+#include "httpserver/application/ApplicationContext.h"
 
 namespace httpserver::UserController {
 
-void handleRegister(std::shared_ptr<::HttpData> httpData);
-void handleLogin(std::shared_ptr<::HttpData> httpData);
+void handleRegister(const ApplicationRequest& request,
+                    const ResponseSender& sendResponse);
+void handleLogin(const ApplicationRequest& request,
+                 const ResponseSender& sendResponse);
 bool registerUser(const std::string& username, const std::string& password);
 bool checkLogin(const std::string& username, const std::string& password);
 

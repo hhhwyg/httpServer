@@ -8,9 +8,10 @@
 namespace {
 
 void testUnknownRouteFallsThrough() {
-  const auto result = httpserver::ApplicationRouter::Dispatch(
-      nullptr, "GET", "/not-a-route", std::string_view{},
-      httpserver::HeaderMap{});
+  const httpserver::ApplicationRequest request{
+      "GET", "/not-a-route", "", {}, ""};
+  const auto result =
+      httpserver::ApplicationRouter::Dispatch(request, {});
   assert(result == httpserver::RouteResult::kNotHandled);
 }
 

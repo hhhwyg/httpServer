@@ -6,14 +6,14 @@
 #include<string>
 #include<vector>
 
-class HttpData;
+#include"httpserver/application/ApplicationContext.h"
 
 class ChatRoom {
 public:
     std::string roomId_;
     std::string name_;
     
-    void join(std::shared_ptr<HttpData>);
+    void join(std::shared_ptr<httpserver::ConnectionSession> user);
     void leave(int fd);
     bool contains(int fd) const;
     void broadcast(const std::string& msg, int skipFd);
@@ -21,6 +21,6 @@ public:
     
 private:
     mutable std::mutex mtx_;
-    std::unordered_map<int, std::weak_ptr<HttpData>> users_;
+    std::unordered_map<int, std::weak_ptr<httpserver::ConnectionSession>> users_;
 
 };
