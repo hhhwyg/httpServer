@@ -1,0 +1,29 @@
+FROM ubuntu:24.04 AS build
+
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    build-essential cmake ninja-build liburing-dev libssl-dev \
+    default-libmysqlclient-dev && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /source
+COPY . .
+RUN cmake --preset release -DBUILD_TESTING=OFF && \
+    cmake --build --preset release --parallel
+
+FROM ubuntu:24.04
+
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    curl liburing2 libmariadb3 libssl3 && \
+    groupadd --system httpserver && \
+    useradd --system --gid httpserver --home-dir /nonexistent --shell /usr/sbin/nologin httpserver && \
+    install -d -o httpserver -g httpserver /app/wwwroot /var/log/httpserver && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /source/build/release/WebServer /app/WebServer
+COPY --from=build /source/wwwroot/ /app/wwwroot/
+
+WORKDIR /app
+USER httpserver
+EXPOSE 8088
+HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
+    CMD curl --fail --silent http://127.0.0.1:8088/healthz || exit 1
+CMD ["/app/WebServer", "-b", "epoll", "-l", "/var/log/httpserver/server.log"]

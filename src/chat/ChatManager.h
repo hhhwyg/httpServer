@@ -16,6 +16,7 @@ public:
                          int senderFd);
     bool isMember(const std::string& roomId, int fd);
     void leaveUser(int fd);
+    int roomCount();
     std::vector<std::shared_ptr<ChatRoom>>getAllRooms();
     std::shared_ptr<ChatRoom> getOrCreateRoom(std::string name);
 private:

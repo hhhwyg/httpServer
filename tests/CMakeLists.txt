@@ -5,6 +5,15 @@ target_link_libraries(ObjectPoolTest PRIVATE httpserver_options)
 add_test(NAME base.object_pool COMMAND ObjectPoolTest)
 set_tests_properties(base.object_pool PROPERTIES LABELS "unit;base")
 
+add_executable(LogFileTest base/LogFileTest.cpp)
+target_include_directories(LogFileTest PRIVATE
+    ${PROJECT_SOURCE_DIR}/src
+    ${HTTPSERVER_LEGACY_INCLUDE_DIRS}
+)
+target_link_libraries(LogFileTest PRIVATE httpserver::core)
+add_test(NAME base.log_file COMMAND LogFileTest)
+set_tests_properties(base.log_file PROPERTIES LABELS "unit;base;observability")
+
 add_executable(UringOperationRegistryTest base/UringOperationRegistryTest.cpp)
 target_include_directories(UringOperationRegistryTest PRIVATE
     ${PROJECT_SOURCE_DIR}/include
@@ -96,6 +105,39 @@ target_link_libraries(ApplicationBoundaryTest PRIVATE httpserver::core)
 add_test(NAME application.boundary COMMAND ApplicationBoundaryTest)
 set_tests_properties(application.boundary PROPERTIES LABELS "unit;application")
 
+add_executable(AuthenticationRateLimiterTest application/AuthenticationRateLimiterTest.cpp)
+target_include_directories(AuthenticationRateLimiterTest PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+)
+target_link_libraries(AuthenticationRateLimiterTest PRIVATE httpserver::core)
+add_test(NAME application.authentication_rate_limiter COMMAND AuthenticationRateLimiterTest)
+set_tests_properties(application.authentication_rate_limiter PROPERTIES
+    LABELS "unit;application;security"
+)
+
+add_executable(MetricsTest application/MetricsTest.cpp)
+target_include_directories(MetricsTest PRIVATE ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(MetricsTest PRIVATE httpserver::core)
+add_test(NAME application.metrics COMMAND MetricsTest)
+set_tests_properties(application.metrics PROPERTIES LABELS "unit;application;observability")
+
+add_executable(DatabaseExecutorTest application/DatabaseExecutorTest.cpp)
+target_include_directories(DatabaseExecutorTest PRIVATE ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(DatabaseExecutorTest PRIVATE httpserver::core)
+add_test(NAME application.database_executor COMMAND DatabaseExecutorTest)
+set_tests_properties(application.database_executor PROPERTIES
+    LABELS "unit;application;concurrency"
+)
+
+add_test(
+    NAME architecture.application_dependencies
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/architecture/ApplicationDependencyTest.sh
+            ${PROJECT_SOURCE_DIR}/src/application/ApplicationRouter.cpp
+)
+set_tests_properties(architecture.application_dependencies PROPERTIES
+    LABELS "architecture;application"
+)
+
 add_executable(ChatRoomTest chat/ChatRoomTest.cpp)
 target_include_directories(ChatRoomTest PRIVATE
     ${PROJECT_SOURCE_DIR}/src
@@ -116,7 +158,63 @@ set_tests_properties(integration.http_smoke PROPERTIES
     TIMEOUT 20
 )
 
+add_test(
+    NAME integration.http_protocol
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/HttpProtocolTest.py
+            $<TARGET_FILE:WebServer> 18099
+)
+set_tests_properties(integration.http_protocol PROPERTIES
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    LABELS "integration;http;protocol"
+    TIMEOUT 25
+)
+
 if(HTTPSERVER_BUILD_MANUAL_TESTS)
     add_executable(LoggingStressTest base/LoggingTest.cpp)
     target_link_libraries(LoggingStressTest PRIVATE httpserver::core)
+endif()
+add_test(
+    NAME integration.websocket_smoke
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/WebSocketSmokeTest.py
+            $<TARGET_FILE:WebServer> 18097
+)
+set_tests_properties(integration.websocket_smoke PROPERTIES
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    LABELS "integration;websocket"
+    TIMEOUT 20
+)
+
+add_test(
+    NAME integration.connection_lifecycle
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/ConnectionLifecycleStressTest.py
+            $<TARGET_FILE:WebServer> 18098
+)
+set_tests_properties(integration.connection_lifecycle PROPERTIES
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    LABELS "integration;lifecycle"
+    TIMEOUT 30
+)
+
+add_test(
+    NAME integration.graceful_shutdown
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/GracefulShutdownTest.py
+            $<TARGET_FILE:WebServer> 18101
+)
+set_tests_properties(integration.graceful_shutdown PROPERTIES
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    LABELS "integration;lifecycle;operations"
+    TIMEOUT 12
+)
+
+if(HTTPSERVER_BUILD_DATABASE_INTEGRATION_TESTS)
+    add_test(
+        NAME integration.database_authentication
+        COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/DatabaseAuthenticationTest.py
+                $<TARGET_FILE:WebServer> 18100
+    )
+    set_tests_properties(integration.database_authentication PROPERTIES
+        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+        LABELS "integration;database;security"
+        TIMEOUT 30
+    )
 endif()

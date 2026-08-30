@@ -132,7 +132,7 @@ void EventLoop::loop() {
   looping_ = true;
   quit_ = false;
   // LOG_TRACE << "EventLoop " << this << " start looping";
-  while (!quit_) {
+  while (!quit_.load(std::memory_order_acquire)) {
     // cout << "doing" << endl;
     eventHandling_ = true;
     poller_->processEvents();
@@ -157,7 +157,7 @@ void EventLoop::doPendingFunctors() {
 }
 
 void EventLoop::quit() {
-  quit_ = true;
+  quit_.store(true, std::memory_order_release);
   if (!isInLoopThread()) {
     wakeup();
   }

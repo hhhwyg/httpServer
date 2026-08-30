@@ -21,6 +21,8 @@ std::string_view ReasonPhrase(int status) {
       return "Method Not Allowed";
     case 413:
       return "Payload Too Large";
+    case 429:
+      return "Too Many Requests";
     default:
       return "Service Unavailable";
   }

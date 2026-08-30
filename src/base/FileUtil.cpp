@@ -10,7 +10,8 @@
 
 using namespace std;
 
-AppendFile::AppendFile(string filename) : fp_(fopen(filename.c_str(), "ae")) {
+AppendFile::AppendFile(string filename)
+    : fp_(fopen(filename.c_str(), "ae")), writtenBytes_(0) {
   if (fp_ == nullptr) {
       // 打印具体原因：是权限不足 (Permission denied) 还是路径不存在？
       fprintf(stderr, "LogFile Error: fopen failed for %s. Reason: %s\n", 
@@ -19,6 +20,8 @@ AppendFile::AppendFile(string filename) : fp_(fopen(filename.c_str(), "ae")) {
       exit(1); 
   }
   setbuffer(fp_, buffer_, sizeof buffer_);//让用户控制缓冲区的大小和生命周期内部定义的 buffer_ 替换了 FILE* 默认的缓冲区（通常是 8KB）。
+  const long offset = ftell(fp_);
+  if (offset > 0) writtenBytes_ = static_cast<size_t>(offset);
 }
 
 AppendFile::~AppendFile() { fclose(fp_); }
@@ -36,6 +39,7 @@ void AppendFile::append(const char* logline, const size_t len) {
     n += x;
     remain = len - n;
   }
+  writtenBytes_ += n;
 }
 
 void AppendFile::flush() { fflush(fp_); }

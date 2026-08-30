@@ -52,7 +52,7 @@ enum ParseState {
 
 enum ConnectionState { H_CONNECTED = 0, H_DISCONNECTING, H_DISCONNECTED };
 
-enum HttpMethod { METHOD_POST = 1, METHOD_GET, METHOD_HEAD };
+enum HttpMethod { METHOD_POST = 1, METHOD_GET, METHOD_HEAD, METHOD_UNSUPPORTED };
 
 enum HttpVersion { HTTP_10 = 1, HTTP_11 };
 
@@ -104,8 +104,9 @@ class HttpData : public std::enable_shared_from_this<HttpData>,
   HttpVersion HTTPVersion_;
   std::string fileName_;
   std::string path_;
-  std::string uri_; // 请求路径 
+  std::string uri_; // 请求路径
   std::string query_; // URL 参数
+  std::string peerAddress_;
   int nowReadPos_;
   ProcessState state_;
   ParseState hState_;
@@ -116,6 +117,7 @@ class HttpData : public std::enable_shared_from_this<HttpData>,
   std::string webSocketFragment_;
   bool webSocketFragmented_ = false;
   bool closeAfterWrite_ = false;
+  bool requestInFlight_ = false;
   
   void handleRead();
   void handleReadComplete(int bytes_read);
@@ -130,6 +132,8 @@ class HttpData : public std::enable_shared_from_this<HttpData>,
   void handleWebSocketFrame();
   void closeWebSocket(std::uint16_t code, const std::string& reason = {});
   void handleWriteInLoop(const std::string& msg);
+  void completeApplicationResponse(int status, std::string type,
+                                   std::string body);
   AnalysisState handleStaticFile();
   URIState parseURI();
   HeaderState parseHeaders();

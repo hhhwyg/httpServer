@@ -9,7 +9,7 @@ namespace {
 
 void testUnknownRouteFallsThrough() {
   const httpserver::ApplicationRequest request{
-      "GET", "/not-a-route", "", {}, ""};
+      "GET", "/not-a-route", "", {}, "", "127.0.0.1"};
   const auto result =
       httpserver::ApplicationRouter::Dispatch(request, {});
   assert(result == httpserver::RouteResult::kNotHandled);

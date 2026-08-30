@@ -54,10 +54,15 @@ public:
             std::allocator_traits<Allocator>::construct(
                 allocator_, storage, std::forward<Args>(args)...);
         } catch (...) {
+            bool shouldCache = false;
             if (reused) {
                 std::lock_guard<std::mutex> lock(mutex_);
-                freeList_.push_back(storage);
-            } else {
+                if (freeList_.size() < maxCached_) {
+                    freeList_.push_back(storage);
+                    shouldCache = true;
+                }
+            }
+            if (!shouldCache) {
                 std::allocator_traits<Allocator>::deallocate(allocator_, storage, 1);
             }
             throw;

@@ -24,6 +24,7 @@
 /*.profraw
 /*.profdata
 /coverage/
+/benchmarks/
 
 # Local configuration and credentials
 /.env

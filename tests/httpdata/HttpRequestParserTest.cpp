@@ -17,8 +17,11 @@ int main() {
   assert(headers->contentLength == 12);
   assert(headers->keepAlive);
 
+  assert(httpserver::HttpRequestParser::ParseRequestLine(
+             "PUT / HTTP/1.1")
+             .has_value());
   assert(!httpserver::HttpRequestParser::ParseRequestLine(
-              "PUT / HTTP/1.1")
+              "GET  / HTTP/1.1")
               .has_value());
   assert(httpserver::HttpRequestParser::QueryParam(
              "a=1&token=abc", "token") == "abc");

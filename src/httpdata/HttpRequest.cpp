@@ -54,8 +54,11 @@ std::optional<ParsedRequestLine> HttpRequestParser::ParseRequestLine(
       std::string(line.substr(0, firstSpace)),
       std::string(line.substr(firstSpace + 1, secondSpace - firstSpace - 1)),
       std::string(line.substr(secondSpace + 1))};
-  if ((parsed.method != "GET" && parsed.method != "POST" &&
-       parsed.method != "HEAD") ||
+  if (parsed.method.empty() ||
+      !std::all_of(parsed.method.begin(), parsed.method.end(),
+                   [](unsigned char character) {
+                     return std::isupper(character) != 0;
+                   }) ||
       parsed.target.empty() || parsed.target.size() > 2048 ||
       (parsed.version != "HTTP/1.1" && parsed.version != "HTTP/1.0")) {
     return std::nullopt;

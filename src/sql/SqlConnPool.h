@@ -19,6 +19,7 @@ public:
     MYSQL *GetConn();
     void FreeConn(MYSQL * conn);
     int GetFreeConnCount();
+    int GetUseConnCount();
     bool IsInitialized() const;
     void ClosePool();
 

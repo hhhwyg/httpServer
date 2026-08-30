@@ -1,5 +1,6 @@
 #include "httpserver/application/ApplicationRouter.h"
 
+#include "httpserver/application/OperationalStatus.h"
 #include "httpserver/application/RoomController.h"
 #include "httpserver/application/UserController.h"
 
@@ -15,6 +16,27 @@ RouteResult ApplicationRouter::Dispatch(const ApplicationRequest& request,
   if ((request.method == "GET" || request.method == "HEAD") &&
       request.path == "/ping") {
     sendResponse(200, "text/plain", "OK");
+    return RouteResult::kHandled;
+  }
+
+  if ((request.method == "GET" || request.method == "HEAD") &&
+      request.path == "/healthz") {
+    sendResponse(200, "text/plain", "ok\n");
+    return RouteResult::kHandled;
+  }
+
+  if ((request.method == "GET" || request.method == "HEAD") &&
+      request.path == "/readyz") {
+    const bool ready = OperationalStatus::ready();
+    sendResponse(ready ? 200 : 503, "text/plain",
+                 ready ? "ready\n" : "not ready\n");
+    return RouteResult::kHandled;
+  }
+
+  if ((request.method == "GET" || request.method == "HEAD") &&
+      request.path == "/metrics") {
+    sendResponse(200, "text/plain; version=0.0.4",
+                 OperationalStatus::prometheusMetrics());
     return RouteResult::kHandled;
   }
 

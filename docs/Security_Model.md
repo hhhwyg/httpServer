@@ -2,7 +2,7 @@
 
 ## 当前边界
 
-本项目仍是学习型服务器，尚未完成限流、TLS 终止、完整 HTTP 输入上限与数据库异步化。以下措施只降低已识别的认证和数据访问风险，不能替代生产安全评审。
+本项目仍是学习型服务器，尚未完成 TLS 终止、HTTP chunked 编码支持、代理后的真实客户端 IP 识别及完整生产安全评审。以下措施只降低已识别的认证和数据访问风险，不能替代生产安全评审。
 
 ## 凭据与配置
 
@@ -28,8 +28,12 @@ JWT 固定使用 HS256，payload 包含 `sub`、`iss`、`iat` 和 `exp`。验证
 
 WebSocket 只接受 `verifyAndExtractUsername()` 成功的 token，避免出现“先解码用户名、后遗漏验证”的调用路径。token 仍通过 WebSocket URL query 传递，可能被访问日志或代理记录；Phase 5 部署时应改为受 TLS 保护且不写入日志的认证传递方式。
 
+## 认证限流
+
+登录按用户名和 TCP 对端 IP、WebSocket 握手按已验证 JWT 主体和 TCP 对端 IP 执行独立的滑动窗口限流。默认每个维度 60 秒内最多 10 次；`HTTPSERVER_AUTH_MAX_ATTEMPTS` 和 `HTTPSERVER_AUTH_WINDOW_SECONDS` 可调整。该地址来自 socket，不信任客户端可伪造的转发头；部署在反向代理之后时，代理仍须在边界处实施真实客户端 IP 限流。
+
 ## 数据库
 
 注册和登录改为 MySQL prepared statements，用户名与 password hash 不再拼接进 SQL。数据库连接创建失败时连接池初始化失败，空 `MYSQL*` 不会进入队列；连接池没有可用连接时立即返回失败，避免阻塞 EventLoop。
 
-数据库操作仍在 EventLoop 回调中同步执行。因此数据库慢或不可用时仍会影响该 EventLoop 的响应能力。后续应通过独立执行器和 repository 接口把阻塞数据库 I/O 移出网络事件循环。
+注册和登录的密码派生、密码校验及 MySQL repository 调用在两个专用工作线程中执行；响应通过所属连接的 EventLoop 回送。单连接在认证请求完成前暂停后续请求解析，确保 Keep-Alive 响应顺序。执行器队列上限为 256，饱和时认证路由返回 `503`，避免无限排队耗尽内存。

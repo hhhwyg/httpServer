@@ -2,11 +2,13 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <unistd.h>
 #include <functional>
 #include "Util.h"
 #include "base/ObjectPool.h"
 #include "HttpData.h"
 #include "httpserver/base/Logging.h"
+#include "httpserver/application/Metrics.h"
 
 Server::Server(httpserver::EventLoop* loop, int threadNum, int port,
                httpserver::PollerBackend backend,
@@ -40,7 +42,21 @@ void Server::start() {
   started_ = true;
 }
 
+void Server::stopAccepting() {
+  if (!started_) return;
+  started_ = false;
+  if (acceptChannel_) {
+    loop_->removeFromPoller(acceptChannel_);
+    acceptChannel_->deactivate();
+  }
+  if (listenFd_ >= 0) {
+    close(listenFd_);
+    listenFd_ = -1;
+  }
+}
+
 void Server::handNewConn() {
+  if (!started_ || listenFd_ < 0) return;
   //std::cout << "[handNewConn] ENTER" << std::endl;
   struct sockaddr_in client_addr;
   memset(&client_addr, 0, sizeof(struct sockaddr_in));
@@ -79,6 +95,7 @@ void Server::handNewConn() {
     req_info->init();
     // 2. 极其重要的检查：确保 HttpData 和它内部的 Channel 都存在
     if (req_info && req_info->getChannel()) {
+        httpserver::Metrics::ConnectionOpened();
         req_info->getChannel()->setOwner(req_info);
         loop->queueInLoop(std::bind(&HttpData::newEvent, req_info));
     } else {

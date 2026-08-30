@@ -51,11 +51,13 @@ cmake --build --preset asan --parallel
 ctest --preset asan
 ```
 
-自动测试包含基础组件、生命周期、Poller、配置和加密单元测试，以及会启动真实服务的 `integration.http_smoke`。只运行 HTTP 黑盒测试：
+自动测试包含基础组件、生命周期、Poller、配置和加密单元测试，以及会启动真实服务的 HTTP、WebSocket 和连接生命周期回归。只运行集成测试：
 
 ```bash
 ctest --preset debug -L integration --output-on-failure
 ```
+
+服务启动后可通过 `/healthz` 确认进程存活，通过 `/readyz` 确认 JWT 与数据库已就绪；`/metrics` 输出 Prometheus 文本指标。详细含义见 `docs/Observability.md`。
 
 `tests/base/LoggingTest.cpp` 是高输出量的手工压力程序，不会由 CTest 自动执行；需要时使用：
 
@@ -84,6 +86,20 @@ cmake --build build/debug --target HTTPClient --parallel
 ```bash
 docker compose up --build builder mysql
 ```
+
+`builder` 会在 MySQL 健康检查完成后初始化测试表、构建服务并运行完整 CTest，其中包含 `integration.database_authentication`。该测试默认不加入普通预设；仅在设置 `HTTPSERVER_BUILD_DATABASE_INTEGRATION_TESTS=ON` 时启用。
+
+GitHub Actions 在 Ubuntu 24.04 上安装 Linux 依赖并执行 Debug CTest；数据库容器集成测试仍由 Docker Compose 在本地或专用 CI job 执行。
+
+在 Linux/WSL 上可使用统一验收脚本：
+
+```bash
+scripts/validate_linux.sh debug
+scripts/validate_linux.sh asan
+HTTPSERVER_VALIDATE_DATABASE=1 scripts/validate_linux.sh debug
+```
+
+最后一条会额外启动 Docker Compose 的 MySQL 集成测试。
 
 ## 失败排查
 

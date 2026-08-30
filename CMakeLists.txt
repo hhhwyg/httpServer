@@ -6,6 +6,8 @@ include(CTest)
 
 option(HTTPSERVER_BUILD_EXAMPLES "Build manual example programs" OFF)
 option(HTTPSERVER_BUILD_MANUAL_TESTS "Build long-running manual test programs" OFF)
+option(HTTPSERVER_BUILD_DATABASE_INTEGRATION_TESTS
+       "Run integration tests against a configured MySQL instance" OFF)
 option(HTTPSERVER_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 set(HTTPSERVER_SANITIZER "" CACHE STRING
     "Sanitizer to enable: address,undefined or thread")
@@ -14,6 +16,10 @@ set(HTTPSERVER_CORE_SOURCES
     src/IoUring.cpp
     src/Poller.cpp
     src/application/Authentication.cpp
+    src/application/AuthenticationRateLimiter.cpp
+    src/application/DatabaseExecutor.cpp
+    src/application/Metrics.cpp
+    src/application/OperationalStatus.cpp
     src/application/ApplicationRouter.cpp
     src/application/ChatApplication.cpp
     src/config/ServerConfig.cpp
@@ -41,6 +47,7 @@ set(HTTPSERVER_CORE_SOURCES
     src/httpdata/WebSocket.cpp
     src/server/Server.cpp
     src/sql/SqlConnPool.cpp
+    src/sql/UserRepository.cpp
     src/timer/Timer.cpp
     src/util/CryptoUtil.cpp
     src/util/Util.cpp

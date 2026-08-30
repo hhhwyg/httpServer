@@ -72,6 +72,12 @@ void AsyncLogging::threadFunc() {
     assert(!buffersToWrite.empty());
 
     if (buffersToWrite.size() > 25) {
+      char message[128];
+      const int length = snprintf(message, sizeof(message),
+                                  "AsyncLogging dropped %zu buffers due to backpressure\n",
+                                  buffersToWrite.size() - 2);
+      fputs(message, stderr);
+      output.append(message, length);
       // char buf[256];
       // snprintf(buf, sizeof buf, "Dropped log messages at %s, %zd larger
       // buffers\n",

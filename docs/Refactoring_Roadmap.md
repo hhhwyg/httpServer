@@ -110,7 +110,7 @@ cmake/                    # CMake 辅助模块
 
 ### Phase 1：先修正连接生命周期和 I/O 正确性
 
-**状态：核心修复已完成，增强验证待补。** 已使用操作令牌替代 fd 路由 CQE，消除了 fd 复用时旧完成事件投递给新连接的路径；`HttpData` 回调已改为弱引用，并建立了 Poller 所有权、幂等关闭、read/write/poll 取消和定时器分离流程。fd 上限和 io_uring 队列容量已支持环境变量配置。长稳连接风暴、慢客户端和 Sanitizer 运行仍需在 Linux/WSL CI 中完成。
+**状态：实现与自动化回归已完成，Linux/WSL 验收待执行。** 已使用操作令牌替代 fd 路由 CQE，消除了 fd 复用时旧完成事件投递给新连接的路径；`HttpData` 回调已改为弱引用，并建立了 Poller 所有权、幂等关闭、read/write/poll 取消和定时器分离流程。fd 上限和 io_uring 队列容量已支持环境变量配置。CTest 已覆盖 token 替换、关闭释放、对象池并发与构造失败，以及真实服务的高频连断、未完成请求和慢读取客户端回归；Debug 与 ASan/UBSan 的 Linux/WSL 执行结果仍是本阶段最终验收凭据。
 
 **目标：** 消除最危险的 fd、对象和异步操作生命周期问题。这是整个项目的最高优先级。
 
@@ -130,7 +130,7 @@ cmake/                    # CMake 辅助模块
 
 ### Phase 2：协议实现与功能闭环
 
-**状态：协议边界和基础聊天室权限已完成，架构拆分与端到端验证待补。** 已修复 URI 到 `path_`/`query_` 的赋值、字符串 `roomId` 契约、房间成员校验、断线清理和前端重连；请求行、Header、Body、静态文件和 WebSocket 帧均有显式上限。静态目录拒绝路径穿越，`HEAD` 不再发送 body，WebSocket 已支持文本分片、ping/pong、close 和非法帧拒绝。HTTP parser/response writer/router 的独立模块化、聊天室独立服务、数据库端到端和完整 WebSocket 黑盒测试仍待完成。
+**状态：实现与自动化回归已完成，Linux/WSL 验收待执行。** HTTP parser、response writer 和 router 已使用独立接口；聊天室通过 `ChatApplication`/`ChatRoom` 与连接会话抽象协作。URI 到 `path_`/`query_` 的赋值、字符串 `roomId` 契约、房间成员校验和断线清理均已覆盖。请求行、Header、Body、静态文件和 WebSocket 帧均有显式上限；静态目录拒绝路径穿越，`HEAD` 不发送 body，WebSocket 支持文本分片、ping/pong、close 和非法帧拒绝。CTest 已覆盖 HTTP Keep-Alive、POST body 消费、畸形与超长请求、认证建房、双客户端 join/chat 广播和服务恢复；真实数据库注册/登录属于 Phase 3 验收。
 
 **目标：** 将 HTTP、WebSocket 和聊天室变成经过黑盒测试的完整功能，而不是分散在 `HttpData` 中的条件分支。
 
@@ -150,7 +150,7 @@ cmake/                    # CMake 辅助模块
 
 ### Phase 3：安全、配置与数据访问
 
-**状态：核心安全基线已完成，数据库集成验收待补。** 已移除硬编码 JWT secret 和演示数据库口令，新增环境变量配置、JWT issuer/签发/过期校验、scrypt 密码 hash、MySQL prepared statements、连接池初始化失败处理，以及对应的配置与加密单测。真实 MySQL 容器集成测试、限流和将阻塞数据库 I/O 移出 EventLoop 仍是本阶段后续工作。
+**状态：Phase 3 实现已完成，Linux/WSL 验收待执行。** 已移除硬编码 JWT secret 和演示数据库口令，新增 TOML/环境变量配置、JWT issuer/签发/过期校验、scrypt 密码 hash、MySQL prepared statements、连接池初始化失败处理，以及对应的配置与加密单测。用户控制器按用户名和 TCP 对端 IP 限流，WebSocket 握手按 JWT 主体和 TCP 对端 IP 限流。注册和登录的密码及数据库操作由有界的专用执行器完成，响应切回原 EventLoop。Docker Compose 会初始化 MySQL schema 并执行注册、重复注册、登录、错误密码和注入格式输入的集成测试。
 
 **目标：** 将演示代码改为不会以明文凭据、SQL 拼接或硬编码密钥运行的服务。
 
@@ -187,6 +187,8 @@ cmake/                    # CMake 辅助模块
 **学习重点：** 单一职责、依赖倒置、接口隔离、重构时的行为保持、ADR（Architecture Decision Record）。
 
 ### Phase 5：可观测性、可靠性与部署
+
+**状态：Phase 5 实现完成，Linux/CI 验收待执行。** 已提供 `/healthz`、`/readyz` 和 Prometheus 文本 `/metrics`，涵盖连接、请求、响应类别、I/O 错误、房间与数据库池计数，并由 HTTP 集成测试覆盖端点契约。`SIGTERM`/`SIGINT` 通过主 EventLoop 停止接收新连接、等待 2 秒后退出；提供非 root 容器、资源限制、systemd 示例、日志滚动/保留/积压告警和 Linux CTest CI。磁盘写入失败的专用指标与基于活跃连接数的提前退出可作为后续增强。
 
 **目标：** 出问题时能定位，启动和停止时行为可预测。
 

@@ -100,6 +100,11 @@ int SqlConnPool::GetFreeConnCount() {
   return freeCount_;
 }
 
+int SqlConnPool::GetUseConnCount() {
+  std::lock_guard<std::mutex> locker(mtx_);
+  return useCount_;
+}
+
 bool SqlConnPool::IsInitialized() const {
   std::lock_guard<std::mutex> locker(mtx_);
   return initialized_;

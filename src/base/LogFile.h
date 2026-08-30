@@ -10,7 +10,8 @@
 class LogFile : noncopyable {
  public:
   // 每被append flushEveryN次，flush一下，会往文件写，只不过，文件也是带缓冲区的
-  LogFile(const std::string& basename, int flushEveryN = 1024);
+  LogFile(const std::string& basename, int flushEveryN = 1024,
+          size_t rollSizeBytes = 100 * 1024 * 1024, int maxArchiveFiles = 7);
   ~LogFile();
 
   void append(const char* logline, int len);
@@ -22,6 +23,8 @@ class LogFile : noncopyable {
 
   const std::string basename_;
   const int flushEveryN_;
+  const size_t rollSizeBytes_;
+  const int maxArchiveFiles_;
 
   int count_;
   std::unique_ptr<MutexLock> mutex_;

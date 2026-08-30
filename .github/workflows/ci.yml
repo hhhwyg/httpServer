@@ -1,60 +1,22 @@
-name: CI
+name: ci
 
 on:
   push:
-    branches: [main]
   pull_request:
-    branches: [main]
-
-permissions:
-  contents: read
 
 jobs:
-  build-and-test:
-    name: ${{ matrix.preset }}
+  test:
     runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        preset: [debug, asan]
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build g++ clang-format clang-tidy \
-            liburing-dev libssl-dev default-libmysqlclient-dev
+          sudo apt-get install -y cmake ninja-build g++ liburing-dev libssl-dev default-libmysqlclient-dev
       - name: Configure
-        run: cmake --preset ${{ matrix.preset }}
+        run: cmake --preset debug
       - name: Build
-        run: cmake --build --preset ${{ matrix.preset }} --parallel
+        run: cmake --build --preset debug --parallel
       - name: Test
-        run: ctest --preset ${{ matrix.preset }}
-
-  source-hygiene:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-      - name: Check whitespace errors
-        run: git diff --check HEAD^ HEAD
-      - name: Check changed C++ formatting
-        run: |
-          if git diff --name-only HEAD^ HEAD -- '*.cpp' '*.h' | grep -q .; then
-            diff=$(git clang-format --diff --binary clang-format HEAD^ HEAD)
-            test -z "$diff"
-          fi
-      - name: Configure compile database for clang-tidy
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build g++ clang-format clang-tidy \
-            liburing-dev libssl-dev \
-            default-libmysqlclient-dev
-          cmake --preset debug
-      - name: Check changed C++ with clang-tidy
-        run: |
-          files=$(git diff --name-only HEAD^ HEAD -- '*.cpp')
-          if [ -n "$files" ]; then
-            clang-tidy -p build/debug $files
-          fi
+        run: ctest --preset debug

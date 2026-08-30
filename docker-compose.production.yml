@@ -1,0 +1,49 @@
+services:
+  webserver:
+    build:
+      context: .
+      dockerfile: Dockerfile.deploy
+    environment:
+      HTTPSERVER_JWT_SECRET: ${HTTPSERVER_JWT_SECRET:?set a random JWT secret}
+      HTTPSERVER_DB_HOST: mysql
+      HTTPSERVER_DB_PORT: 3306
+      HTTPSERVER_DB_USER: httpserver
+      HTTPSERVER_DB_PASSWORD: ${HTTPSERVER_DB_PASSWORD:?set a database password}
+      HTTPSERVER_DB_NAME: webserver
+    depends_on:
+      mysql:
+        condition: service_healthy
+    ports:
+      - "8088:8088"
+    volumes:
+      - webserver-logs:/var/log/httpserver
+    read_only: true
+    tmpfs:
+      - /tmp
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: 1.0
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set a root password}
+      MYSQL_DATABASE: webserver
+      MYSQL_USER: httpserver
+      MYSQL_PASSWORD: ${HTTPSERVER_DB_PASSWORD:?set a database password}
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./tests/integration/mysql-init.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  mysql-data:
+  webserver-logs:

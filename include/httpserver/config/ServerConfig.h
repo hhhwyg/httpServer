@@ -31,8 +31,15 @@ struct ServerLimits {
   unsigned ioUringQueueSize = 4096;
 };
 
+struct AuthenticationRateLimitConfig {
+  int maxAttempts = 10;
+  int windowSeconds = 60;
+};
+
 class ServerConfig {
  public:
+  // HTTPSERVER_CONFIG_FILE is loaded first when set; individual environment
+  // variables take precedence over the file values.
   static ServerConfig LoadFromEnvironment();
 
   bool valid() const { return validationErrors.empty(); }
@@ -40,6 +47,7 @@ class ServerConfig {
 
   JwtConfig jwt;
   DatabaseConfig database;
+  AuthenticationRateLimitConfig authenticationRateLimit;
   ServerLimits limits;
 
  private:

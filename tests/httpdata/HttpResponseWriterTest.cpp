@@ -16,5 +16,9 @@ int main() {
   assert(closed.find("HTTP/1.1 413 Payload Too Large\r\n") == 0);
   assert(closed.find("Connection: close\r\n") != std::string::npos);
   assert(closed.find("Keep-Alive:") == std::string::npos);
+
+  const std::string limited =
+      httpserver::HttpResponseWriter::SerializeHead(429, "text/plain", 0, false);
+  assert(limited.find("HTTP/1.1 429 Too Many Requests\r\n") == 0);
   return 0;
 }

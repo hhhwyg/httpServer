@@ -11,6 +11,7 @@ class Server {
   ~Server() {}
   httpserver::EventLoop* getLoop() const { return loop_; }
   void start();
+  void stopAccepting();
   void handNewConn();
   void handThisConn() { loop_->updatePoller(acceptChannel_); }
 

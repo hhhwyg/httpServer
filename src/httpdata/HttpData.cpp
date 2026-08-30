@@ -1,16 +1,21 @@
 #include <algorithm>
+#include <arpa/inet.h>
 #include <cctype>
 #include <cstdint>
 #include <functional>
+#include <netinet/in.h>
 #include <string_view>
+#include <sys/socket.h>
 #include "HttpData.h"
 #include "httpserver/transport/EventLoop.h"
 #include "Util.h"
 #include "time.h"
 #include "CryptoUtil.h"
 #include "httpserver/application/Authentication.h"
+#include "httpserver/application/AuthenticationRateLimiter.h"
 #include "httpserver/application/ApplicationRouter.h"
 #include "httpserver/application/ChatApplication.h"
+#include "httpserver/application/Metrics.h"
 #include "httpserver/protocol/HttpRequest.h"
 #include "httpserver/protocol/HttpResponse.h"
 #include "httpserver/protocol/WebSocket.h"
@@ -45,6 +50,30 @@ bool hasPathTraversal(const std::string& path) {
     begin = end + 1;
   }
   return false;
+}
+
+std::string peerAddressFor(int fd) {
+  sockaddr_storage address{};
+  socklen_t addressLength = sizeof(address);
+  if (getpeername(fd, reinterpret_cast<sockaddr*>(&address), &addressLength) !=
+      0) {
+    return {};
+  }
+
+  char text[INET6_ADDRSTRLEN]{};
+  if (address.ss_family == AF_INET) {
+    const auto* ipv4 = reinterpret_cast<const sockaddr_in*>(&address);
+    return inet_ntop(AF_INET, &ipv4->sin_addr, text, sizeof(text)) == nullptr
+               ? std::string{}
+               : std::string(text);
+  }
+  if (address.ss_family == AF_INET6) {
+    const auto* ipv6 = reinterpret_cast<const sockaddr_in6*>(&address);
+    return inet_ntop(AF_INET6, &ipv6->sin6_addr, text, sizeof(text)) == nullptr
+               ? std::string{}
+               : std::string(text);
+  }
+  return {};
 }
 
 }  // namespace
@@ -115,6 +144,7 @@ char favicon[555] = {
     'N',    'D',    '\xAE', 'B',    '\x60', '\x82',
 };
 void HttpData::sendResponse(int status, const std::string& type, const std::string& body) {
+    httpserver::Metrics::ResponseSent(status);
     outBuffer_.append(httpserver::HttpResponseWriter::SerializeHead(
         status, type, body.size(), keepAlive_));
     if (method_ != METHOD_HEAD) {
@@ -131,6 +161,15 @@ void HttpData::handleWriteInLoop(const std::string& msg) {
 
     // 尝试立即发送
     submitAsyncWrite();
+}
+
+void HttpData::completeApplicationResponse(int status, std::string type,
+                                           std::string body) {
+  if (closed_ || connectionState_ == H_DISCONNECTED) return;
+  requestInFlight_ = false;
+  sendResponse(status, type, body);
+  reset();
+  if (!inBuffer_.empty() && connectionState_ == H_CONNECTED) handleRead();
 }
 
 void HttpData::sendMsg(const std::string& msg) {
@@ -170,6 +209,7 @@ HttpData::HttpData(httpserver::EventLoop* loop, int connfd)
     : loop_(loop),
       channel_(new httpserver::Channel(loop, connfd)),
       fd_(connfd),
+      peerAddress_(peerAddressFor(connfd)),
       error_(false),
       closed_(false),
       connectionState_(H_CONNECTED),
@@ -245,6 +285,7 @@ void HttpData::separateTimer() {
 }
 
 void HttpData::handleRead() {
+  if (requestInFlight_) return;
   __uint32_t &events_ = channel_->getEvents();
     do {
         int savedErrno = 0;
@@ -268,6 +309,7 @@ void HttpData::handleRead() {
                 break;
             }
             perror("readn");
+            httpserver::Metrics::IoError();
             error_ = true;
             handleError(fd_, 400, "Bad Request");
             break;
@@ -467,7 +509,7 @@ void HttpData::handleWebSocketFrame() {
 
 
 void HttpData::handleWrite() {
-    if (error_ || connectionState_ == H_DISCONNECTED) return;
+    if (connectionState_ == H_DISCONNECTED) return;
     if (outBuffer_.empty()) return;
 
     // 1. 调用系统写函数
@@ -475,6 +517,7 @@ void HttpData::handleWrite() {
     ssize_t n = outBuffer_.writeFd(fd_, &savedErrno);
 
     if (n < 0 && savedErrno != EAGAIN) {
+        httpserver::Metrics::IoError();
         error_ = true;
         handleClose();
         return;
@@ -531,6 +574,11 @@ void HttpData::handleConn() {
       int timeout = (DEFAULT_KEEP_ALIVE_TIME >> 1);
       loop_->updatePoller(channel_, timeout);
     }
+  } else if (error_ && !outBuffer_.empty()) {
+    // Error responses use the same non-blocking write path as normal output.
+    // Do not close the fd until the pending response is fully drained.
+    events_ = (EPOLLOUT | EPOLLET);
+    loop_->updatePoller(channel_);
   } else if (!error_ && connectionState_ == H_DISCONNECTING &&
              (events_ & EPOLLOUT)) {
     events_ = (EPOLLOUT | EPOLLET);
@@ -555,7 +603,7 @@ URIState HttpData::parseURI() {
   if (parsed->method == "GET") method_ = METHOD_GET;
   else if (parsed->method == "POST") method_ = METHOD_POST;
   else if (parsed->method == "HEAD") method_ = METHOD_HEAD;
-  else return PARSE_URI_ERROR;
+  else method_ = METHOD_UNSUPPORTED;
 
   if (parsed->version == "HTTP/1.1") HTTPVersion_ = HTTP_11;
   else if (parsed->version == "HTTP/1.0") HTTPVersion_ = HTTP_10;
@@ -626,6 +674,14 @@ AnalysisState HttpData::handleWebSocketHandshake() {
         handleError(fd_, 401, "Unauthorized");
         return ANALYSIS_ERROR;
     }
+    const bool userAllowed =
+        httpserver::AuthenticationRateLimiter::Allow("websocket:user:" + *username);
+    const bool ipAllowed = peerAddress_.empty() ||
+        httpserver::AuthenticationRateLimiter::Allow("websocket:ip:" + peerAddress_);
+    if (!userAllowed || !ipAllowed) {
+        handleError(fd_, 429, "Too Many Requests");
+        return ANALYSIS_ERROR;
+    }
 
     // The verified subject is available in *username for future session binding.
 
@@ -654,6 +710,7 @@ AnalysisState HttpData::handleWebSocketHandshake() {
 }
 
 AnalysisState HttpData::analysisRequest() {
+    httpserver::Metrics::RequestStarted();
     if (method_ == METHOD_GET && uri_ == "/ws") {
         return handleWebSocketHandshake();
     }
@@ -669,17 +726,35 @@ AnalysisState HttpData::analysisRequest() {
       case METHOD_HEAD:
         method = "HEAD";
         break;
+      case METHOD_UNSUPPORTED:
+        method = "";
+        break;
     }
+    const std::string bufferedBody = inBuffer_.peekAllAsString();
+    const std::string requestBody =
+        method_ == METHOD_POST ? bufferedBody.substr(0, contentLength_) : "";
     const httpserver::ApplicationRequest request{
-        std::string(method), uri_, query_, headers_, inBuffer_.peekAllAsString()};
+        std::string(method), uri_, query_, headers_, requestBody, peerAddress_};
+    const std::weak_ptr<HttpData> weakSelf = shared_from_this();
     const httpserver::ResponseSender sendResponse =
-        [self = shared_from_this()](int status, std::string_view type,
-                                    std::string_view body) {
-          self->sendResponse(status, std::string(type), std::string(body));
+        [weakSelf, loop = loop_](int status, std::string_view type,
+                                 std::string_view body) {
+          loop->queueInLoop([weakSelf, status, type = std::string(type),
+                             body = std::string(body)] {
+            if (const auto self = weakSelf.lock()) {
+              self->completeApplicationResponse(status, type, body);
+            }
+          });
         };
     if (httpserver::ApplicationRouter::Dispatch(request, sendResponse) ==
         httpserver::RouteResult::kHandled) {
-        return ANALYSIS_SUCCESS;
+        // A POST body belongs only to this request. Leaving it in the input
+        // buffer makes the next Keep-Alive request start in the old JSON body.
+        if (method_ == METHOD_POST && contentLength_ > 0) {
+          inBuffer_.retrieve(static_cast<int>(contentLength_));
+        }
+        requestInFlight_ = true;
+        return ANALYSIS_AGAIN;
     }
 
     if (method_ == METHOD_GET || method_ == METHOD_HEAD) {
@@ -710,33 +785,27 @@ AnalysisState HttpData::handleStaticFile() {
 }
 
 void HttpData::handleError(int fd, int err_num, std::string short_msg) {
-  short_msg = " " + short_msg;
-  char send_buff[4096];
-  std::string body_buff, header_buff;
-  body_buff += "<html><title>哎~出错了</title>";
-  body_buff += "<body bgcolor=\"ffffff\">";
-  body_buff += std::to_string(err_num) + short_msg;
-  body_buff += "<hr><em> LinYa's Web Server</em>\n</body></html>";
-
-  header_buff += "HTTP/1.1 " + std::to_string(err_num) + short_msg + "\r\n";
-  header_buff += "Content-Type: text/html\r\n";
-  header_buff += "Connection: Close\r\n";
-  header_buff += "Content-Length: " + std::to_string(body_buff.size()) + "\r\n";
-  header_buff += "Server: LinYa's Web Server\r\n";
-  ;
-  header_buff += "\r\n";
-  // 错误处理不考虑writen不完的情况
-  sprintf(send_buff, "%s", header_buff.c_str());
-  writen(fd, send_buff, strlen(send_buff));
+  static_cast<void>(fd);
+  const std::string body =
+      "<html><title>Error</title><body>" + std::to_string(err_num) + " " +
+      short_msg + "<hr><em>LinYa's Web Server</em>\n</body></html>";
+  httpserver::Metrics::ResponseSent(err_num);
+  outBuffer_.append(httpserver::HttpResponseWriter::SerializeHead(
+      err_num, "text/html", body.size(), false));
   if (method_ != METHOD_HEAD) {
-    sprintf(send_buff, "%s", body_buff.c_str());
-    writen(fd, send_buff, strlen(send_buff));
+    outBuffer_.append(body);
   }
+
+  // Keep the connection alive until the asynchronous write completion drains
+  // the response. This also preserves partial-write handling for errors.
+  closeAfterWrite_ = true;
+  submitAsyncWrite();
 }
 
 void HttpData::handleClose() {
   if (closed_) return;
   closed_ = true;
+  httpserver::Metrics::ConnectionClosed();
   connectionState_ = H_DISCONNECTED;
 
   // Keep the object alive while detaching callbacks and poller ownership.
@@ -802,6 +871,7 @@ void HttpData::submitAsyncWrite() {
 void HttpData::handleReadComplete(int bytes_read) {
     if (closed_ || connectionState_ == H_DISCONNECTED) return;
     isReading_ = false;
+    if (requestInFlight_) return;
     if (connectionState_ == H_DISCONNECTING) {
         inBuffer_.clear();
         return;
@@ -817,6 +887,7 @@ void HttpData::handleReadComplete(int bytes_read) {
              submitAsyncRead();
              return;
         }
+        httpserver::Metrics::IoError();
         error_ = true;
         handleError(fd_, 400, "Bad Request");
         return;
@@ -917,6 +988,7 @@ void HttpData::handleWriteComplete(int bytes_written) {
              submitAsyncWrite();
              return;
         }
+        httpserver::Metrics::IoError();
         error_ = true;
         handleClose();
         return;

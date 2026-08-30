@@ -44,7 +44,7 @@ cmake --build --preset debug --parallel
 ctest --preset debug -L integration --output-on-failure
 ```
 
-`integration.http_smoke` 会以 `epoll` 后端启动真实服务，覆盖 `/ping`、静态首页、`HEAD` 响应头和路径穿越拒绝。
+`integration.http_smoke` 会以 `epoll` 后端启动真实服务，覆盖 `/ping`、静态首页、`HEAD` 响应头和路径穿越拒绝。`integration.http_protocol` 额外覆盖同连接 Keep-Alive、POST body 后的下一请求、未支持方法的 `405`、畸形 header 和超长 header。
 
 ## 后续工作
 

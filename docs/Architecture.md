@@ -23,6 +23,12 @@ receive timeout behavior through callbacks; they do not include or name
 `HttpData`. The public `Poller` operations are `add`, `modify`, and `remove`.
 Protocol and application code may use transport interfaces, but the reverse
 dependency is prohibited. `ApplicationRouter` owns HTTP route dispatch and
-route-level authentication responses. `ChatApplication` owns room membership
+route-level authentication responses; `OperationalStatus` is the only
+application-facing adapter for readiness and infrastructure metrics.
+`ChatApplication` owns room membership
 and chat message use cases; it receives a callback for connection writes
 instead of reaching into the session's output buffer.
+
+`architecture.application_dependencies` is a lightweight regression test for
+this rule: the HTTP router may include public application interfaces, but must
+not include `ChatManager`, `SqlConnPool`, or `CryptoUtil` implementation headers.

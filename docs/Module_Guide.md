@@ -41,6 +41,10 @@ application interfaces and owns route-level authentication responses.
 `HttpData` keeps only the WebSocket handshake and transport-specific fallback
 branches.
 
+`DatabaseExecutor` is the bounded asynchronous boundary for registration and
+login work. It owns no HTTP connection state; request completion returns to the
+originating EventLoop through the response callback supplied by `HttpData`.
+
 Chat message validation and room membership operations live behind
 `include/httpserver/application/ChatApplication.h`. The connection session
 passes decoded message payloads in and supplies a callback for outbound

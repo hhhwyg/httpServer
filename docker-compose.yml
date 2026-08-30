@@ -20,7 +20,9 @@ services:
       HTTPSERVER_IO_URING_QUEUE_SIZE: 4096
     command: >-
       bash -lc
-      "cmake --preset debug && cmake --build --preset debug --parallel"
+      "cmake --preset debug -DHTTPSERVER_BUILD_DATABASE_INTEGRATION_TESTS=ON &&
+      cmake --build --preset debug --parallel &&
+      ctest --test-dir build/debug --output-on-failure"
 
   mysql:
     image: mysql:8.4
@@ -33,6 +35,7 @@ services:
       - "3306:3306"
     volumes:
       - mysql-data:/var/lib/mysql
+      - ./tests/integration/mysql-init.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 5s

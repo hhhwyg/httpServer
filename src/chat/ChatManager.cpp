@@ -87,6 +87,11 @@ void ChatManager::leaveUser(int fd) {
     }
 }
 
+int ChatManager::roomCount() {
+    std::lock_guard<std::mutex> lock(mtx_);
+    return static_cast<int>(rooms_.size());
+}
+
 std::vector<std::shared_ptr<ChatRoom>> ChatManager::getAllRooms() {
     std::lock_guard<std::mutex> lock(mtx_);
     std::vector<std::shared_ptr<ChatRoom>> allRooms;

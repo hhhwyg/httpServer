@@ -15,6 +15,9 @@
 - WebSocket 握手、客户端掩码帧解析和文本消息广播。
 - 基于 OpenSSL HMAC-SHA256 的 JWT 生成与校验。
 - 基于 MySQL client 的用户注册和登录接口。
+- scrypt 密码哈希、JWT 鉴权、用户/IP 认证限流与 prepared statement 数据访问。
+- `/healthz`、`/readyz` 和 Prometheus 文本 `/metrics` 运维端点。
+- 注册登录的专用数据库执行器、信号驱动的有限宽限期退出和日志滚动。
 - 基于双缓冲的异步日志系统。
 - `ChainBuffer`、内存池和 `HttpData` 对象池等基础组件。
 - 内置 HTTP 请求示例和日志压力测试代码。
@@ -178,7 +181,7 @@ ws://127.0.0.1:8088/ws?token=<JWT>
 
 ## MySQL 配置
 
-登录和注册依赖 MySQL。数据库和 JWT 都通过环境变量配置，禁止在 `src/Main.cpp` 中写入真实口令或 secret；完整变量说明见 [配置](docs/Configuration.md)。未配置数据库时服务仍会启动，但认证路由返回 `503`。
+登录和注册依赖 MySQL。配置可来自 `config.example.toml`，环境变量优先级更高；禁止在 `src/Main.cpp` 中写入真实口令或 secret。完整变量说明见 [配置](docs/Configuration.md)。未配置数据库时服务仍会启动，但认证路由返回 `503`。
 
 示例表结构：
 
@@ -218,7 +221,7 @@ cmake --build build/debug --target LoggingStressTest --parallel
 ./build/debug/tests/LoggingStressTest
 ```
 
-`base.object_pool`、`base.uring_operation_registry`、`base.poller_backend` 和 `httpdata.lifecycle` 已接入 CTest。日志程序是高输出量压力测试，仍需手动执行；后续阶段会继续补充协议和连接生命周期的自动测试。
+单元测试覆盖对象池、日志滚动、配置、限流、指标、协议和连接生命周期；集成测试覆盖 HTTP、WebSocket、连接压力、优雅退出，以及可选 MySQL 注册登录。日志压力程序仍需手动执行。
 
 ## 目录结构
 
@@ -251,10 +254,10 @@ cmake --build build/debug --target LoggingStressTest --parallel
 
 - 项目依赖 Linux 专有接口 `io_uring`、`epoll`、`eventfd` 和 `sendfile`，不能直接在原生 Windows 环境编译运行。
 - 未配置数据库或 JWT secret 时，认证功能会显式关闭；这适合静态文件开发，不可将其作为已配置认证运行。
-- 房间成员权限和断线清理已在连接层处理；数据库端到端联调尚未完成，聊天室仍定位为演示功能。
-- 数据库访问仍在 EventLoop 中同步执行；数据库慢查询会影响网络循环，后续需要移至独立执行器。
+- 聊天室仍定位为演示功能；跨实例消息同步、账号恢复和生产级权限模型尚未实现。
+- 数据库操作由专用执行器处理，但数据库连接健康恢复与慢查询治理仍需在部署层补齐。
 - HTTP 与 WebSocket 已有基础输入上限和协议校验，但尚未支持 HTTP chunked encoding 或大文件流式传输。
-- 日志文件轮转接口尚未实现，运行时应自行管理日志文件大小和保存周期。
+- 日志支持按大小滚动和有限归档；磁盘写失败的专用指标与自动降级策略尚未实现。
 
 ## 相关文档
 
@@ -267,6 +270,12 @@ cmake --build build/debug --target LoggingStressTest --parallel
 - [连接生命周期](docs/Connection_Lifecycle.md)
 - [io_uring I/O 设计](docs/IoUring_Design.md)
 - [可切换 Poller 与性能对比](docs/Poller_Backends.md)
+- [可观测性](docs/Observability.md)
+- [运行操作](docs/Operations.md)
+- [部署](docs/Deployment.md)
+- [故障处置](docs/Runbook.md)
+- [性能验证模板](docs/Benchmark.md)
+- [发布检查表](docs/Release_Checklist.md)
 - [配置](docs/Configuration.md)
 - [安全模型](docs/Security_Model.md)
 - [HTTP 协议边界](docs/HTTP_Protocol.md)

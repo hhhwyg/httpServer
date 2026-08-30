@@ -1,7 +1,15 @@
+#include <chrono>
 #include <getopt.h>
+#include <pthread.h>
+#include <signal.h>
 #include <string>
+#include <sys/signalfd.h>
+#include <thread>
+#include <unistd.h>
 #include"SqlConnPool.h"
 #include "httpserver/config/ServerConfig.h"
+#include "httpserver/application/AuthenticationRateLimiter.h"
+#include "httpserver/application/DatabaseExecutor.h"
 #include "httpserver/transport/EventLoop.h"
 #include "Server.h"
 #include "httpserver/base/Logging.h"
@@ -57,6 +65,9 @@ int main(int argc, char* argv[]) {
     return 1;
   }
   CryptoUtil::configureJwt(config.jwt);
+  httpserver::AuthenticationRateLimiter::Configure(
+      config.authenticationRateLimit.maxAttempts,
+      config.authenticationRateLimit.windowSeconds);
   const httpserver::PollerConfig pollerConfig{config.limits.maxFds,
                                               config.limits.ioUringQueueSize};
 // STL库在多线程上应用
@@ -81,7 +92,42 @@ int main(int argc, char* argv[]) {
       << " backend";
   httpserver::EventLoop mainLoop(backend, pollerConfig);  // 主线程只负责接收 socket 连接
   Server myHTTPServer(&mainLoop, threadNum, port, backend, pollerConfig);
+  sigset_t shutdownSignals;
+  sigemptyset(&shutdownSignals);
+  sigaddset(&shutdownSignals, SIGINT);
+  sigaddset(&shutdownSignals, SIGTERM);
+  if (pthread_sigmask(SIG_BLOCK, &shutdownSignals, nullptr) != 0) {
+    LOG << "Unable to block shutdown signals";
+    return 1;
+  }
+  const int signalFd = signalfd(-1, &shutdownSignals, SFD_NONBLOCK | SFD_CLOEXEC);
+  if (signalFd < 0) {
+    LOG << "Unable to create shutdown signal fd";
+    return 1;
+  }
   myHTTPServer.start();
+  bool shuttingDown = false;
+  std::thread shutdownTimer;
+  auto signalChannel = std::make_shared<httpserver::Channel>(&mainLoop, signalFd);
+  signalChannel->setEvents(EPOLLIN);
+  signalChannel->setReadHandler([&] {
+    signalfd_siginfo signalInfo{};
+    while (read(signalFd, &signalInfo, sizeof(signalInfo)) == sizeof(signalInfo)) {
+      if (shuttingDown) continue;
+      shuttingDown = true;
+      LOG << "Shutdown signal received; stopping new connections";
+      myHTTPServer.stopAccepting();
+      shutdownTimer = std::thread([&mainLoop] {
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+        mainLoop.queueInLoop([&mainLoop] { mainLoop.quit(); });
+      });
+    }
+  });
+  mainLoop.addToPoller(signalChannel);
   mainLoop.loop();
+  if (shutdownTimer.joinable()) shutdownTimer.join();
+  mainLoop.removeFromPoller(signalChannel);
+  close(signalFd);
+  httpserver::DatabaseExecutor::Shutdown();
   return 0;
 }

@@ -1,0 +1,20 @@
+[jwt]
+secret = "replace-with-a-random-secret-at-least-32-bytes"
+issuer = "httpServer"
+ttl_seconds = 3600
+
+[database]
+host = "127.0.0.1"
+port = 3306
+user = "httpserver"
+password = "replace-this-value"
+name = "webserver"
+pool_size = 4
+
+[authentication_rate_limit]
+max_attempts = 10
+window_seconds = 60
+
+[limits]
+max_fds = 100000
+io_uring_queue_size = 4096

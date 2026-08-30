@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <functional>
 #include <memory>
@@ -40,7 +41,7 @@ class EventLoop {
   bool looping_;
   std::unique_ptr<Poller> poller_;
   int wakeupFd_;
-  bool quit_;
+  std::atomic<bool> quit_;
   bool eventHandling_;
   mutable std::mutex mutex_;
   std::vector<Functor> pendingFunctors_;

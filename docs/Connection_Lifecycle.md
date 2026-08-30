@@ -50,6 +50,9 @@ ctest --preset debug
 cmake --preset asan
 cmake --build --preset asan --parallel
 ctest --preset asan
+
+# 仅运行连接生命周期回归
+ctest --preset debug -L lifecycle
 ```
 
 测试覆盖：
@@ -57,6 +60,7 @@ ctest --preset asan
 - `base.uring_operation_registry`：旧 poll token 到达时不能删除同 fd 的新 poll token。
 - `base.poller_backend`：命令行后端值只解析为 `io_uring` 或 `epoll`。
 - `httpdata.lifecycle`：弱回调不会形成对象环；关闭会释放 fd；重复关闭安全。
-- `base.object_pool`：缓存内存重新构造对象，不复用旧连接状态。
+- `base.object_pool`：缓存内存重新构造对象，不复用旧连接状态；并发 acquire/release 和构造失败都遵守缓存上限。
+- `integration.connection_lifecycle`：真实服务在高频连断、未完成请求和慢读取客户端后仍能持续处理健康检查。该测试使用 `epoll`，避免测试环境禁用 `io_uring` 时造成错误结论。
 
-已用真实 `WebServer` 对本机 `GET /ping` 做过回归验证。后续需要增加长时间连接风暴、慢客户端和 fd 复用压力测试，才能对泄漏与容量做出更强结论。
+`base.uring_operation_registry` 对 token 与同数值 fd 的替换关系进行确定性验证；`integration.connection_lifecycle` 则提供真实 socket 的回归覆盖。两者都应在 Debug 与 ASan/UBSan 预设中执行。长时间运行的容量与内存曲线仍属于 Phase 6 的性能验证，而不是本阶段的吞吐结论。
