@@ -20,3 +20,9 @@ jobs:
         run: cmake --build --preset debug --parallel
       - name: Test
         run: ctest --preset debug
+      - name: Configure ASan and UBSan
+        run: cmake --preset asan
+      - name: Build ASan and UBSan
+        run: cmake --build --preset asan --parallel
+      - name: Test ASan and UBSan
+        run: ctest --preset asan

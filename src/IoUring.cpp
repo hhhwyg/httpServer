@@ -53,7 +53,7 @@ __uint32_t IoUring::pollToEpollEvents(short pollEvents) {
 }
 
 IoUring::IoUring(const httpserver::PollerConfig& config)
-    : queueSize_(config.ioUringQueueSize) {
+    : queueSize_(config.ioUringQueueSize), readyCqes_(queueSize_) {
   const int result = io_uring_queue_init(queueSize_, &ring_, 0);
   if (result < 0) {
     LOG << "io_uring_queue_init failed: " << std::strerror(-result);
@@ -216,36 +216,23 @@ void IoUring::submitWrite(httpserver::ChannelPtr request, const void* buffer,
 
 void IoUring::processEvents() {
   while (true) {
-    // 一次提交本轮累积的 poll/read/write SQE。这样多个连接可批量进入内核。
-    const int submitResult = io_uring_submit(&ring_);
+    // Submit all SQEs accumulated by the previous callbacks and wait for at
+    // least one completion in the same syscall. This preserves batching while
+    // avoiding a separate submit + wait transition on every wakeup.
+    const int submitResult = io_uring_submit_and_wait(&ring_, 1);
     if (submitResult < 0) {
+      if (submitResult == -EINTR) continue;
       LOG << "io_uring_submit failed: " << std::strerror(-submitResult);
-      return;
-    }
-
-    __kernel_timespec timeout{};
-    timeout.tv_sec = 10;
-
-    io_uring_cqe* cqe = nullptr;
-    const int waitResult = io_uring_wait_cqe_timeout(&ring_, &cqe, &timeout);
-    if (waitResult < 0) {
-      if (waitResult == -EINTR) {
-        continue;
-      }
-      if (waitResult == -ETIME) {
-        return;
-      }
-      LOG << "io_uring_wait_cqe_timeout failed: " << std::strerror(-waitResult);
       return;
     }
 
     // 已经等到至少一个 CQE 后，把当前可见的 CQE 一次取出，减少
     // EventLoop 在高并发下反复进入内核的次数。
-    std::vector<io_uring_cqe*> cqes(queueSize_);
-    const unsigned count = io_uring_peek_batch_cqe(&ring_, cqes.data(), queueSize_);
+    const unsigned count = io_uring_peek_batch_cqe(
+        &ring_, readyCqes_.data(), readyCqes_.size());
     for (unsigned index = 0; index < count; ++index) {
-      const std::uint64_t token = io_uring_cqe_get_data64(cqes[index]);
-      const int result = cqes[index]->res;
+      const std::uint64_t token = io_uring_cqe_get_data64(readyCqes_[index]);
+      const int result = readyCqes_[index]->res;
       if (token == 0) {
         continue;
       }

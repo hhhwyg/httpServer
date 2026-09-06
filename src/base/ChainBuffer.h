@@ -2,6 +2,7 @@
 #include "MemoryPool.h"
 #include <vector>
 #include <string>
+#include <string_view>
 #include <sys/uio.h>
 #include <unistd.h>
 #include <string.h>
@@ -67,14 +68,22 @@ public:
     void retrieve(int len) {
         if (len > totalBytes_) len = totalBytes_;
         int remaining = len;
-        
+
         while (remaining > 0 && !chunks_.empty()) {
             BufferChunk* first = chunks_.front();
             int readable = first->readableBytes();
-            
+
             if (remaining >= readable) {
                 remaining -= readable;
                 totalBytes_ -= readable;
+                // Keep one empty chunk attached to the buffer. Connections
+                // reuse it for the next request, avoiding a global pool lock
+                // and allocation on every keep-alive response.
+                if (chunks_.size() == 1) {
+                    first->readPos = 0;
+                    first->writePos = 0;
+                    break;
+                }
                 delete first;
                 chunks_.erase(chunks_.begin());
             } else {
@@ -113,6 +122,16 @@ public:
             res.append(chunk->data + chunk->readPos, chunk->readableBytes());
         }
         return res;
+    }
+
+    // Most HTTP requests fit in the first chunk. Expose that case without a
+    // copy while retaining the existing copy-based fallback for fragmented
+    // input.
+    std::string_view peekContiguous() const {
+        if (chunks_.size() != 1) return {};
+        const BufferChunk* chunk = chunks_.front();
+        return {chunk->data + chunk->readPos,
+                static_cast<std::size_t>(chunk->readableBytes())};
     }
 
     ssize_t readFd(int fd, int* savedErrno) {
@@ -180,14 +199,19 @@ public:
 
     ssize_t writeFd(int fd, int* savedErrno) {
         if (chunks_.empty()) return 0;
-        
-        std::vector<struct iovec> vec(chunks_.size());
-        for (size_t i = 0; i < chunks_.size(); ++i) {
-            vec[i].iov_base = chunks_[i]->data + chunks_[i]->readPos;
-            vec[i].iov_len = chunks_[i]->readableBytes();
+
+        ssize_t n = 0;
+        if (chunks_.size() == 1) {
+            BufferChunk* first = chunks_.front();
+            n = write(fd, first->data + first->readPos, first->readableBytes());
+        } else {
+            std::vector<struct iovec> vec(chunks_.size());
+            for (size_t i = 0; i < chunks_.size(); ++i) {
+                vec[i].iov_base = chunks_[i]->data + chunks_[i]->readPos;
+                vec[i].iov_len = chunks_[i]->readableBytes();
+            }
+            n = writev(fd, vec.data(), vec.size());
         }
-        
-        ssize_t n = writev(fd, vec.data(), vec.size());
         if (n < 0) {
             *savedErrno = errno;
         } else {

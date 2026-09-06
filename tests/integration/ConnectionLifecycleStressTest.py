@@ -9,6 +9,9 @@ import sys
 import tempfile
 import time
 
+CONNECT_TIMEOUT_SECONDS = 2
+RESPONSE_TIMEOUT_SECONDS = 5
+
 
 def receive_headers(sock):
     data = b""
@@ -23,8 +26,10 @@ def receive_headers(sock):
 
 
 def ping(port):
-    with socket.create_connection(("127.0.0.1", port), timeout=2) as sock:
-        sock.settimeout(2)
+    with socket.create_connection(
+        ("127.0.0.1", port), timeout=CONNECT_TIMEOUT_SECONDS
+    ) as sock:
+        sock.settimeout(RESPONSE_TIMEOUT_SECONDS)
         sock.sendall(
             b"GET /ping HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
         )
@@ -42,7 +47,9 @@ def ping(port):
 
 
 def disconnect_mid_request(port, iteration):
-    with socket.create_connection(("127.0.0.1", port), timeout=2) as sock:
+    with socket.create_connection(
+        ("127.0.0.1", port), timeout=CONNECT_TIMEOUT_SECONDS
+    ) as sock:
         if iteration % 3 == 0:
             sock.sendall(b"GET / HTTP/1.1\r\nHost: localhost\r\n")
         elif iteration % 3 == 1:

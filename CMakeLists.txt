@@ -140,3 +140,9 @@ if(HTTPSERVER_BUILD_EXAMPLES)
     add_executable(HTTPClient tests/HTTPClient.cpp)
     target_link_libraries(HTTPClient PRIVATE httpserver_options)
 endif()
+
+if(HTTPSERVER_BUILD_MANUAL_TESTS)
+    add_executable(httpserver_epoll_benchmark
+        tests/benchmark/http_epoll_benchmark.cpp)
+    target_link_libraries(httpserver_epoll_benchmark PRIVATE Threads::Threads)
+endif()

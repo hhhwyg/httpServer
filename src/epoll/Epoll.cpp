@@ -110,11 +110,33 @@ void Epoll::submitWrite(httpserver::ChannelPtr request, const void* buffer,
 }
 
 void Epoll::processEvents() {
-  const std::vector<httpserver::ChannelPtr> requests = poll();
-  for (const httpserver::ChannelPtr& request : requests) {
-    if (request && request->isActive()) {
-      request->handleEvents();
-    }
+  int eventCount = 0;
+  do {
+    eventCount = epoll_wait(epollFd_, events_.data(),
+                            static_cast<int>(events_.size()),//指向 vector 内部存储数组第一个元素的指针
+                            kEpollWaitTimeMs);
+  } while (eventCount < 0 && errno == EINTR);
+
+  if (eventCount < 0) {
+    LOG << "epoll wait failed: " << std::strerror(errno);
+    return;
+  }
+
+  // The normal event-loop path does not need to retain all ready channels at
+  // once. Process each shared owner directly and avoid a vector allocation on
+  // every epoll wakeup; poll() remains available for callers that need a
+  // snapshot of the ready set.
+  for (int index = 0; index < eventCount; ++index) {
+    auto* const rawChannel =
+        static_cast<httpserver::Channel*>(events_[index].data.ptr);
+    const auto channelIt = channels_.find(rawChannel);
+    if (channelIt == channels_.end()) continue;
+
+    const httpserver::ChannelPtr request = channelIt->second;
+    if (!request || !request->isActive()) continue;
+    request->setRevents(events_[index].events);
+    request->setEvents(0);
+    request->handleEvents();
   }
 }
 

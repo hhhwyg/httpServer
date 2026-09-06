@@ -275,6 +275,8 @@ cmake --build build/debug --target LoggingStressTest --parallel
 - [部署](docs/Deployment.md)
 - [故障处置](docs/Runbook.md)
 - [性能验证模板](docs/Benchmark.md)
+- [性能分析与本次基线](docs/Performance_Analysis.md)
+- [HTTP 性能优化历程](docs/Optimization_History.md)
 - [发布检查表](docs/Release_Checklist.md)
 - [配置](docs/Configuration.md)
 - [安全模型](docs/Security_Model.md)

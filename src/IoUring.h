@@ -3,6 +3,7 @@
 #include <liburing.h>
 #include <memory>
 #include <unordered_map>
+#include <vector>
 #include "IoUringOperation.h"
 #include "Timer.h"
 #include "httpserver/transport/Poller.h"
@@ -44,4 +45,7 @@ class IoUring : public httpserver::Poller {
       connectionOwners_;
   UringOperationRegistry operations_;
   TimerManager timerManager_;
+  // Reused for every CQE harvest; allocating queueSize_ pointers per wakeup
+  // is especially expensive for the small-packet HTTP hot path.
+  std::vector<io_uring_cqe*> readyCqes_;
 };

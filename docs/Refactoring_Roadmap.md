@@ -91,7 +91,7 @@ cmake/                    # CMake 辅助模块
 
 ### Phase 0：冻结基线与工程脚手架
 
-**状态：已完成。** Debug 与 ASan/UBSan 构建均已在 WSL Ubuntu 中通过，`base.object_pool` CTest 在两套构建下均通过。存量编译告警已记录，暂不启用 `-Werror`，留待 Phase 4 以独立改动清理。
+**状态：工程脚手架已完成，静态检查仍待接入。** Debug 与 ASan/UBSan 构建及 CTest 已在 WSL Ubuntu 临时构建目录中通过；存量编译告警已记录，暂不启用 `-Werror`，留待 Phase 4 以独立改动清理。clang-format/clang-tidy 尚未接入 CI。
 
 **目标：** 让任何人都能在同一环境复现当前行为和后续变化。
 
@@ -110,7 +110,7 @@ cmake/                    # CMake 辅助模块
 
 ### Phase 1：先修正连接生命周期和 I/O 正确性
 
-**状态：实现与自动化回归已完成，Linux/WSL 验收待执行。** 已使用操作令牌替代 fd 路由 CQE，消除了 fd 复用时旧完成事件投递给新连接的路径；`HttpData` 回调已改为弱引用，并建立了 Poller 所有权、幂等关闭、read/write/poll 取消和定时器分离流程。fd 上限和 io_uring 队列容量已支持环境变量配置。CTest 已覆盖 token 替换、关闭释放、对象池并发与构造失败，以及真实服务的高频连断、未完成请求和慢读取客户端回归；Debug 与 ASan/UBSan 的 Linux/WSL 执行结果仍是本阶段最终验收凭据。
+**状态：实现与 Linux/WSL 自动化回归已通过。** 已使用操作令牌替代 fd 路由 CQE，消除了 fd 复用时旧完成事件投递给新连接的路径；`HttpData` 回调已改为弱引用，并建立了 Poller 所有权、幂等关闭、read/write/poll 取消和定时器分离流程。fd 上限和 io_uring 队列容量已支持环境变量配置。Debug 与 ASan/UBSan 构建的 24 个 CTest 均通过，覆盖 token 替换、关闭释放、对象池并发与构造失败，以及真实服务的高频连断、未完成请求、慢读取客户端和优雅退出回归。
 
 **目标：** 消除最危险的 fd、对象和异步操作生命周期问题。这是整个项目的最高优先级。
 
@@ -130,7 +130,7 @@ cmake/                    # CMake 辅助模块
 
 ### Phase 2：协议实现与功能闭环
 
-**状态：实现与自动化回归已完成，Linux/WSL 验收待执行。** HTTP parser、response writer 和 router 已使用独立接口；聊天室通过 `ChatApplication`/`ChatRoom` 与连接会话抽象协作。URI 到 `path_`/`query_` 的赋值、字符串 `roomId` 契约、房间成员校验和断线清理均已覆盖。请求行、Header、Body、静态文件和 WebSocket 帧均有显式上限；静态目录拒绝路径穿越，`HEAD` 不发送 body，WebSocket 支持文本分片、ping/pong、close 和非法帧拒绝。CTest 已覆盖 HTTP Keep-Alive、POST body 消费、畸形与超长请求、认证建房、双客户端 join/chat 广播和服务恢复；真实数据库注册/登录属于 Phase 3 验收。
+**状态：实现与 Linux/WSL 自动化回归已通过，数据库路径除外。** HTTP parser、response writer 和 router 已使用独立接口；聊天室通过 `ChatApplication`/`ChatRoom` 与连接会话抽象协作。URI 到 `path_`/`query_` 的赋值、字符串 `roomId` 契约、房间成员校验和断线清理均已覆盖。请求行、Header、Body、静态文件和 WebSocket 帧均有显式上限；静态目录拒绝路径穿越，`HEAD` 不发送 body，WebSocket 支持文本分片、ping/pong、close 和非法帧拒绝。Debug 与 ASan/UBSan 的 HTTP、WebSocket、连接生命周期和协议测试均通过；真实数据库注册/登录属于 Phase 3 验收。
 
 **目标：** 将 HTTP、WebSocket 和聊天室变成经过黑盒测试的完整功能，而不是分散在 `HttpData` 中的条件分支。
 
@@ -188,7 +188,7 @@ cmake/                    # CMake 辅助模块
 
 ### Phase 5：可观测性、可靠性与部署
 
-**状态：Phase 5 实现完成，Linux/CI 验收待执行。** 已提供 `/healthz`、`/readyz` 和 Prometheus 文本 `/metrics`，涵盖连接、请求、响应类别、I/O 错误、房间与数据库池计数，并由 HTTP 集成测试覆盖端点契约。`SIGTERM`/`SIGINT` 通过主 EventLoop 停止接收新连接、等待 2 秒后退出；提供非 root 容器、资源限制、systemd 示例、日志滚动/保留/积压告警和 Linux CTest CI。磁盘写入失败的专用指标与基于活跃连接数的提前退出可作为后续增强。
+**状态：实现与 Linux/WSL Debug、ASan/UBSan 回归已通过，CI/部署验收待执行。** 已提供 `/healthz`、`/readyz` 和 Prometheus 文本 `/metrics`，涵盖连接、请求、响应类别、I/O 错误、房间与数据库池计数，并由 HTTP 集成测试覆盖端点契约。`SIGTERM`/`SIGINT` 通过主 EventLoop 停止接收新连接、等待 2 秒后退出；提供非 root 容器、资源限制、systemd 示例、日志滚动/保留/积压告警和 Linux CTest CI。Docker Compose、真实数据库、CI 远程运行和故障演练仍待执行；磁盘写入失败的专用指标与基于活跃连接数的提前退出可作为后续增强。
 
 **目标：** 出问题时能定位，启动和停止时行为可预测。
 
@@ -206,6 +206,8 @@ cmake/                    # CMake 辅助模块
 
 ### Phase 6：性能验证与发布
 
+**状态：HTTP 基线、静态文件、`epoll`/`io_uring` 对照和 30 秒长稳测试已完成；Release + C++ 非阻塞客户端的 `GET /ping` 基线已达到本机 20 万 req/s 以上。WebSocket、连接洪泛、故障演练、`perf` 分析和正式发布仍待完成。** 已在 WSL2 Release 构建下执行 `/ping` 与首页静态文件的 Keep-Alive/短连接测试，记录吞吐、错误率、p50/p95/p99、服务 CPU 时间、RSS 和 fd；结果与限制见 `docs/Performance_Analysis.md`。
+
 **目标：** 用可复现数据证明设计，而不是以“高性能”作为没有依据的标签。
 
 - 固定机器、内核、CPU、内存、编译器、构建类型、文件描述符上限和压测工具版本；记录到报告。
@@ -216,7 +218,7 @@ cmake/                    # CMake 辅助模块
 
 **验收：** `tests/benchmark` 的脚本可复跑，报告包含原始命令和环境；优化前后有对照；没有未经数据证实的性能宣传。
 
-**产出文档：** `docs/Benchmark.md`、`docs/Performance_Analysis.md`、`docs/Release_Checklist.md`、`CHANGELOG.md`。
+**产出文档：** `docs/Benchmark.md`、`docs/Performance_Analysis.md`、`docs/Optimization_History.md`、`docs/Release_Checklist.md`、`CHANGELOG.md`。
 
 **学习重点：** 基准设计、尾延迟、性能剖析、容量边界、因果验证。
 

@@ -12,7 +12,7 @@ RUN cmake --preset release -DBUILD_TESTING=OFF && \
 FROM ubuntu:24.04
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    curl liburing2 libmariadb3 libssl3 && \
+    curl liburing2 libmysqlclient21 libmariadb3 libssl3 && \
     groupadd --system httpserver && \
     useradd --system --gid httpserver --home-dir /nonexistent --shell /usr/sbin/nologin httpserver && \
     install -d -o httpserver -g httpserver /app/wwwroot /var/log/httpserver && \

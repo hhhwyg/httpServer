@@ -1,6 +1,7 @@
 #pragma once
 #include <sys/epoll.h>
 #include <unistd.h>
+#include <chrono>
 #include <functional>
 #include <map>
 #include <memory>
@@ -127,6 +128,8 @@ class HttpData : public std::enable_shared_from_this<HttpData>,
   bool webSocketFragmented_ = false;
   bool closeAfterWrite_ = false;
   bool requestInFlight_ = false;
+  std::chrono::steady_clock::time_point lastTimerRefresh_{};
+  bool timerRefreshInitialized_ = false;
   
   void handleRead();
   void handleReadComplete(int bytes_read);
