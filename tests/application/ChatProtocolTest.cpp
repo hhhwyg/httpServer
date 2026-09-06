@@ -49,6 +49,8 @@ void TestServerEnvelopes() {
   assert(ack.find("\"version\":1") != std::string::npos);
   assert(ack.find("\"type\":\"message.ack\"") != std::string::npos);
   assert(ack.find("\"messageId\":\"200\"") != std::string::npos);
+  assert(ack.find("\"clientMessageId\":\"c1\"") != std::string::npos);
+  assert(ack.find("\"payload\":{\"message\"") == std::string::npos);
   const std::string push = httpserver::ChatProtocol::MessageCreated(message);
   assert(push.find("\"senderId\":\"alice\"") != std::string::npos);
   assert(push.find("\"createdAt\"") != std::string::npos);

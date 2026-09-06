@@ -25,15 +25,16 @@ class InMemoryChatRepository final : public RoomRepository,
   std::vector<RoomMember> List(std::string_view roomId) const override;
   std::size_t Count(std::string_view roomId) const override;
 
-  std::optional<Message> FindByClientId(
-      std::string_view roomId, std::string_view senderId,
-      std::string_view clientMessageId) const override;
-  Message Append(std::string_view roomId, std::string_view senderId,
-                 std::string_view clientMessageId,
-                 std::string_view content) override;
+  MessageAppendResult AppendOrGet(std::string_view roomId,
+                                  std::string_view senderId,
+                                  std::string_view clientMessageId,
+                                  std::string_view content) override;
   std::vector<Message> ListBefore(std::string_view roomId,
                                   std::uint64_t beforeId,
                                   std::size_t limit) const override;
+  std::vector<Message> ListAfter(std::string_view roomId,
+                                 std::uint64_t afterId,
+                                 std::size_t limit) const override;
 
   void Reset();
 

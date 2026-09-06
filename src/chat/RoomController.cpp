@@ -75,7 +75,6 @@ int ErrorStatus(ChatServiceError error) {
       return 403;
     case ChatServiceError::kOwnerCannotLeave:
     case ChatServiceError::kAlreadyMember:
-    case ChatServiceError::kDuplicateMessage:
       return 409;
     case ChatServiceError::kInvalidCursor:
       return 400;
@@ -216,14 +215,24 @@ void handleGetRoomMessagesV1(const ApplicationRequest& request,
                 "limit must be an integer between 1 and 100");
     return;
   }
-  const std::string before =
-      HttpRequestParser::QueryParam(request.query, "before");
+  const std::string before = HttpRequestParser::QueryParam(request.query, "before");
+  const std::string after = HttpRequestParser::QueryParam(request.query, "after");
+  if (!before.empty() && !after.empty()) {
+    SendV1Error(sendResponse, 400, ChatServiceError::kInvalidArgument,
+                "before and after cannot be used together");
+    return;
+  }
+  const bool incremental = !after.empty() ||
+                           request.query.find("after=") != std::string::npos;
   const MessageHistoryResult result =
-      ChatService::Instance().ListMessages(userId, roomId, before, *limit);
+      incremental ? ChatService::Instance().ListMessagesAfter(userId, roomId,
+                                                               after, *limit)
+                  : ChatService::Instance().ListMessages(userId, roomId,
+                                                         before, *limit);
   if (result.error != ChatServiceError::kNone) {
     SendV1Error(sendResponse, ErrorStatus(result.error), result.error,
                 result.error == ChatServiceError::kInvalidCursor
-                    ? "before must be a positive server message ID"
+                    ? "before and after must be server message IDs"
                     : result.error == ChatServiceError::kRoomNotFound
                           ? "room does not exist"
                           : "room membership is required");
@@ -237,10 +246,13 @@ void handleGetRoomMessagesV1(const ApplicationRequest& request,
   json nextBefore = result.nextBefore.has_value()
                         ? json(*result.nextBefore)
                         : json(nullptr);
+  json nextAfter = result.nextAfter.has_value() ? json(*result.nextAfter)
+                                                 : json(nullptr);
   sendResponse(200, "application/json",
                json{{"ok", true},
                     {"data", {{"messages", messages},
-                              {"nextBefore", nextBefore}}}}
+                              {"nextBefore", nextBefore},
+                              {"nextAfter", nextAfter}}}}
                    .dump());
 }
 

@@ -202,6 +202,28 @@ set_tests_properties(e2e.chat_business_flow PROPERTIES
     LABELS "e2e;application;domain;protocol;chat"
     TIMEOUT 30
 )
+
+add_test(
+    NAME e2e.message_idempotency
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/e2e/MessageIdempotencyTest.py
+            $<TARGET_FILE:WebServer> 18311
+)
+set_tests_properties(e2e.message_idempotency PROPERTIES
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    LABELS "e2e;application;domain;protocol;chat;reliability"
+    TIMEOUT 30
+)
+
+add_test(
+    NAME e2e.reconnect_recovery
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/e2e/ReconnectRecoveryTest.py
+            $<TARGET_FILE:WebServer> 18312
+)
+set_tests_properties(e2e.reconnect_recovery PROPERTIES
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    LABELS "e2e;application;domain;protocol;chat;reliability"
+    TIMEOUT 45
+)
 set_tests_properties(integration.websocket_smoke PROPERTIES
     WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
     LABELS "integration;websocket"

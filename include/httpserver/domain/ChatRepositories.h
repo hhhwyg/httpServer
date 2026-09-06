@@ -36,15 +36,17 @@ class MessageRepository {
  public:
   virtual ~MessageRepository() = default;
 
-  virtual std::optional<Message> FindByClientId(
+  // Atomically returns the existing logical message or appends a new one.
+  // The idempotency key is (senderId, clientMessageId), not a connection ID.
+  virtual MessageAppendResult AppendOrGet(
       std::string_view roomId, std::string_view senderId,
-      std::string_view clientMessageId) const = 0;
-  virtual Message Append(std::string_view roomId, std::string_view senderId,
-                         std::string_view clientMessageId,
-                         std::string_view content) = 0;
+      std::string_view clientMessageId, std::string_view content) = 0;
   virtual std::vector<Message> ListBefore(std::string_view roomId,
                                           std::uint64_t beforeId,
                                           std::size_t limit) const = 0;
+  virtual std::vector<Message> ListAfter(std::string_view roomId,
+                                         std::uint64_t afterId,
+                                         std::size_t limit) const = 0;
 };
 
 }  // namespace httpserver

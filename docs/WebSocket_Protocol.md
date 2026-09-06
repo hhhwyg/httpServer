@@ -24,7 +24,7 @@ ws://127.0.0.1:8088/ws?token=<JWT>
 
 新客户端统一使用 `version=1` envelope，命令包括 `room.subscribe` 和 `message.send`。服务端响应包括 `room.subscribed`、`message.ack`、`message.created` 和 `error`。完整字段与示例见 [API_v1.md](API_v1.md)。
 
-`requestId`、`roomId`、`clientMessageId` 都是 1 至 128 字节的非空字符串，单条 `content` 为 1 至 4096 字节。缺失字段、错误类型、未知版本和未知消息类型都会返回带稳定错误码的 v1 `error` envelope，不再静默忽略。
+`requestId`、`roomId`、`clientMessageId` 都是 1 至 128 字节的非空字符串，单条 `content` 为 1 至 4096 字节。`requestId` 对应一次传输尝试，`clientMessageId` 对应不可复用的逻辑消息；ACK 超时重试必须复用后者。服务端对重复逻辑消息返回相同 ACK，不会重复广播。缺失字段、错误类型、未知版本和未知消息类型都会返回带稳定错误码的 v1 `error` envelope，不再静默忽略。
 
 旧 `join/chat` JSON 暂时只作为兼容层保留，新前端和新测试不再依赖它。
 
@@ -34,4 +34,4 @@ ws://127.0.0.1:8088/ws?token=<JWT>
 
 ## 验证
 
-`application.chat_protocol` 覆盖协议字段、类型、版本和大小限制；`e2e.chat_business_flow` 覆盖注册登录、成员权限、ACK、实时推送、重复消息、历史游标和退出后的权限撤销。`integration.websocket_smoke` 继续覆盖旧协议兼容性和 WebSocket 帧行为。
+`application.chat_protocol` 覆盖协议字段、类型、版本和大小限制；`e2e.chat_business_flow` 覆盖注册登录、成员权限、ACK、实时推送、幂等重试、历史游标和退出后的权限撤销；`e2e.message_idempotency` 与 `e2e.reconnect_recovery` 验证 ACK 丢失重试和断线增量恢复。`integration.websocket_smoke` 继续覆盖旧协议兼容性和 WebSocket 帧行为。

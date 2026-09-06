@@ -29,8 +29,6 @@ const char* ErrorMessage(httpserver::ChatServiceError error) {
       return "room does not exist";
     case httpserver::ChatServiceError::kNotMember:
       return "room membership and subscription are required";
-    case httpserver::ChatServiceError::kDuplicateMessage:
-      return "clientMessageId has already been used";
     case httpserver::ChatServiceError::kAlreadyMember:
     case httpserver::ChatServiceError::kOwnerCannotLeave:
     case httpserver::ChatServiceError::kInvalidCursor:
@@ -71,6 +69,10 @@ void HandleV1(
 
   sendMessage(httpserver::ChatProtocol::MessageAck(command.requestId,
                                                     result.message));
+  // A retry is acknowledged from the persisted record but never republished.
+  if (!result.inserted) return;
+
+  result.stage = httpserver::MessageDeliveryStage::kPublished;
   const std::string push =
       httpserver::ChatProtocol::MessageCreated(result.message);
   for (const auto& recipient : result.recipients) {

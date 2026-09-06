@@ -129,7 +129,9 @@ std::string ChatProtocol::MessageAck(std::string_view requestId,
   return json{{"version", kVersion},
               {"type", "message.ack"},
               {"requestId", requestId},
-              {"payload", {{"message", MessageJson(message)}}}}
+              {"payload", {{"clientMessageId", message.clientMessageId},
+                           {"messageId", message.id},
+                           {"createdAt", message.createdAt}}}}
       .dump();
 }
 

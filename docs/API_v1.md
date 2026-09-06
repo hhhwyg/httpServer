@@ -147,12 +147,19 @@ GET /api/v1/rooms/{roomId}/messages?before=20000010&limit=50
         "createdAt": "2026-09-06T10:00:00.000Z"
       }
     ],
-    "nextBefore": null
+    "nextBefore": null,
+    "nextAfter": null
   }
 }
 ```
 
-存在更早一页时，`nextBefore` 是下一次请求应使用的游标；非法游标返回 `400 invalid_cursor`。只有房间成员可以查询。
+存在更早一页时，`nextBefore` 是下一次请求应使用的游标。断线恢复使用另一种向后增量查询：
+
+```http
+GET /api/v1/rooms/{roomId}/messages?after=20000010&limit=100
+```
+
+`after` 返回严格大于该 ID 的消息，按 ID 升序排列；若还有下一页，`nextAfter` 是本页最后一条消息 ID。`before` 和 `after` 不能同时使用。非法游标返回 `400 invalid_cursor`，只有房间成员可以查询。
 
 ## WebSocket v1
 
@@ -188,7 +195,22 @@ GET /api/v1/rooms/{roomId}/messages?before=20000010&limit=50
 }
 ```
 
-服务端向发送者返回 `message.ack`，向同房间其他在线连接推送 `message.created`。二者的 `payload.message` 都包含 `messageId`、`roomId`、`senderId`、`clientMessageId`、`content` 和 `createdAt`。`requestId` 与一次请求关联，`clientMessageId` 标识一次客户端消息提交，两者长度均为 1 至 128 字节。
+服务端仅在消息达到可靠接收边界后向发送者返回 `message.ack`：
+
+```json
+{
+  "version": 1,
+  "type": "message.ack",
+  "requestId": "request-2",
+  "payload": {
+    "clientMessageId": "client-message-1",
+    "messageId": "20000000",
+    "createdAt": "2026-09-06T10:00:00.000Z"
+  }
+}
+```
+
+首次插入才向同房间其他在线连接推送 `message.created`，其 `payload.message` 使用与 HTTP 历史相同的字段：`messageId`、`roomId`、`senderId`、`clientMessageId`、`content` 和 `createdAt`。同一发送者以同一个 `clientMessageId` 重试时返回同一 ACK，但不会重复广播。`requestId` 与一次传输尝试关联，`clientMessageId` 标识一次逻辑消息，两者长度均为 1 至 128 字节。
 
 WebSocket 错误也使用 v1 envelope：
 
@@ -215,7 +237,6 @@ WebSocket 错误也使用 v1 envelope：
 | 403 | `room_membership_required` | 当前用户不是房间成员 |
 | 404 | `room_not_found` | 房间不存在 |
 | 409 | `room_owner_cannot_leave` | owner 未转移前不能退出 |
-| WS | `duplicate_message` | 同一发送者重复使用 `clientMessageId` |
 | 400 | `invalid_cursor` | 历史消息游标不是正整数消息 ID |
 
 ## 本地 E2E 认证存储

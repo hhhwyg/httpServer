@@ -171,20 +171,23 @@ def run_flow(port):
         send_json(alice, message_command)
         ack = receive_json(alice)
         assert ack["type"] == "message.ack"
-        server_message = ack["payload"]["message"]
-        assert server_message["senderId"] == "m1-alice"
-        assert server_message["clientMessageId"] == "alice-client-1"
-        assert server_message["createdAt"].endswith("Z")
+        ack_payload = ack["payload"]
+        assert ack_payload["clientMessageId"] == "alice-client-1"
+        assert ack_payload["createdAt"].endswith("Z")
 
         for peer in (bob, charlie):
             push = receive_json(peer)
             assert push["type"] == "message.created"
-            assert push["payload"]["message"] == server_message
+            server_message = push["payload"]["message"]
+            assert server_message["senderId"] == "m1-alice"
+            assert server_message["clientMessageId"] == "alice-client-1"
+            assert server_message["messageId"] == ack_payload["messageId"]
+            assert server_message["createdAt"] == ack_payload["createdAt"]
 
         send_json(alice, message_command)
         duplicate = receive_json(alice)
-        assert duplicate["type"] == "error"
-        assert duplicate["error"]["code"] == "duplicate_message"
+        assert duplicate["type"] == "message.ack"
+        assert duplicate["payload"] == ack_payload
 
         history_path = f"/api/v1/rooms/{room_id}/messages?limit=20"
         status, history = request_json(port, "GET", history_path, bob_token)

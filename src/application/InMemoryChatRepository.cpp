@@ -37,6 +37,9 @@ class InMemoryChatRepository::Impl {
   std::unordered_map<std::string, Room> rooms;
   std::unordered_map<std::string, std::unordered_set<std::string>> members;
   std::unordered_map<std::string, std::vector<Message>> messages;
+  std::unordered_map<std::string,
+                     std::unordered_map<std::string, Message>>
+      messagesByClientId;
   std::uint64_t nextRoomId = 10000000;
   std::uint64_t nextMessageId = 20000000;
 };
@@ -130,33 +133,26 @@ std::size_t InMemoryChatRepository::Count(std::string_view roomId) const {
   return members == impl_->members.end() ? 0 : members->second.size();
 }
 
-std::optional<Message> InMemoryChatRepository::FindByClientId(
+MessageAppendResult InMemoryChatRepository::AppendOrGet(
     std::string_view roomId, std::string_view senderId,
-    std::string_view clientMessageId) const {
+    std::string_view clientMessageId, std::string_view content) {
   std::lock_guard<std::mutex> lock(impl_->mutex);
-  const auto messages = impl_->messages.find(std::string(roomId));
-  if (messages == impl_->messages.end()) return std::nullopt;
-  const auto message = std::find_if(
-      messages->second.begin(), messages->second.end(),
-      [senderId, clientMessageId](const Message& candidate) {
-        return candidate.senderId == senderId &&
-               candidate.clientMessageId == clientMessageId;
-      });
-  return message == messages->second.end()
-             ? std::nullopt
-             : std::optional<Message>(*message);
-}
+  const std::string senderKey(senderId);
+  const std::string clientKey(clientMessageId);
+  const auto sender = impl_->messagesByClientId.find(senderKey);
+  if (sender != impl_->messagesByClientId.end()) {
+    const auto existing = sender->second.find(clientKey);
+    if (existing != sender->second.end()) {
+      return {existing->second, false};
+    }
+  }
 
-Message InMemoryChatRepository::Append(std::string_view roomId,
-                                       std::string_view senderId,
-                                       std::string_view clientMessageId,
-                                       std::string_view content) {
-  std::lock_guard<std::mutex> lock(impl_->mutex);
   Message message{std::to_string(impl_->nextMessageId++), std::string(roomId),
                   std::string(senderId), std::string(clientMessageId),
                   std::string(content), UtcTimestamp()};
   impl_->messages[message.roomId].push_back(message);
-  return message;
+  impl_->messagesByClientId[senderKey].emplace(clientKey, message);
+  return {std::move(message), true};
 }
 
 std::vector<Message> InMemoryChatRepository::ListBefore(
@@ -176,11 +172,28 @@ std::vector<Message> InMemoryChatRepository::ListBefore(
   return result;
 }
 
+std::vector<Message> InMemoryChatRepository::ListAfter(
+    std::string_view roomId, std::uint64_t afterId, std::size_t limit) const {
+  std::lock_guard<std::mutex> lock(impl_->mutex);
+  std::vector<Message> result;
+  const auto messages = impl_->messages.find(std::string(roomId));
+  if (messages == impl_->messages.end() || limit == 0) return result;
+
+  for (const Message& message : messages->second) {
+    if (std::stoull(message.id) > afterId) {
+      result.push_back(message);
+      if (result.size() == limit) break;
+    }
+  }
+  return result;
+}
+
 void InMemoryChatRepository::Reset() {
   std::lock_guard<std::mutex> lock(impl_->mutex);
   impl_->rooms.clear();
   impl_->members.clear();
   impl_->messages.clear();
+  impl_->messagesByClientId.clear();
   impl_->nextRoomId = 10000000;
   impl_->nextMessageId = 20000000;
 }

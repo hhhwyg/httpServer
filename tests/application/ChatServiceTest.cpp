@@ -109,8 +109,9 @@ void TestMessageDispatchAndCursorHistory() {
 
   const auto duplicate = service.DispatchMessage(
       created.room.id, "alice", "client-1", "first", alice->sessionId());
-  assert(duplicate.error == httpserver::ChatServiceError::kDuplicateMessage);
+  assert(duplicate.error == httpserver::ChatServiceError::kNone);
   assert(duplicate.message.id == first.message.id);
+  assert(!duplicate.inserted);
 
   const auto page = service.ListMessages("alice", created.room.id, "", 2);
   assert(page.error == httpserver::ChatServiceError::kNone);
@@ -125,6 +126,14 @@ void TestMessageDispatchAndCursorHistory() {
   assert(older.messages.size() == 1);
   assert(older.messages.front().id == first.message.id);
   assert(!older.nextBefore.has_value());
+
+  const auto incremental =
+      service.ListMessagesAfter("alice", created.room.id, first.message.id, 2);
+  assert(incremental.error == httpserver::ChatServiceError::kNone);
+  assert(incremental.messages.size() == 2);
+  assert(incremental.messages.front().id == second.message.id);
+  assert(incremental.messages.back().id == third.message.id);
+  assert(!incremental.nextAfter.has_value());
   assert(service.ListMessages("alice", created.room.id, "bad-cursor", 20)
              .error == httpserver::ChatServiceError::kInvalidCursor);
   assert(service.ListMessages("outsider", created.room.id, "", 20).error ==
@@ -135,6 +144,46 @@ void TestMessageDispatchAndCursorHistory() {
   assert(service.DispatchMessage(created.room.id, "bob", "after-leave",
                                  "forbidden", bob->sessionId())
              .error == httpserver::ChatServiceError::kNotMember);
+}
+
+void TestConcurrentIdempotentMessageSubmission() {
+  httpserver::ChatService& service = httpserver::ChatService::Instance();
+  service.ResetForTesting();
+  const auto created = service.CreateRoom("alice", "idempotency");
+  assert(created.error == httpserver::ChatServiceError::kNone);
+  auto alice = std::make_shared<TestSession>(40, "alice");
+  assert(service.AttachSession(created.room.id, alice) ==
+         httpserver::ChatServiceError::kNone);
+
+  constexpr int kSubmissions = 100;
+  std::vector<httpserver::SendMessageResult> results(kSubmissions);
+  std::vector<std::thread> workers;
+  workers.reserve(2);
+  for (int worker = 0; worker < 2; ++worker) {
+    workers.emplace_back([&service, &results, roomId = created.room.id, worker] {
+      for (int offset = 0; offset < kSubmissions / 2; ++offset) {
+        results[worker * (kSubmissions / 2) + offset] = service.SendMessage(
+            {roomId, "alice", "retry-safe-message", "exactly one", 40});
+      }
+    });
+  }
+  for (std::thread& worker : workers) worker.join();
+
+  const std::string messageId = results.front().message.id;
+  int insertions = 0;
+  for (const auto& result : results) {
+    assert(result.error == httpserver::ChatServiceError::kNone);
+    assert(result.stage == httpserver::MessageDeliveryStage::kPersisted);
+    assert(result.message.id == messageId);
+    insertions += result.inserted ? 1 : 0;
+  }
+  assert(insertions == 1);
+
+  const auto history = service.ListMessagesAfter("alice", created.room.id,
+                                                 "0", 100);
+  assert(history.error == httpserver::ChatServiceError::kNone);
+  assert(history.messages.size() == 1);
+  assert(history.messages.front().id == messageId);
 }
 
 void TestLeaveRulesAndLegacyEnrollment() {
@@ -199,6 +248,7 @@ int main() {
   TestInputValidation();
   TestMessageDispatchAndCursorHistory();
   TestConcurrentMembershipUpdates();
+  TestConcurrentIdempotentMessageSubmission();
   httpserver::ChatService::Instance().ResetForTesting();
   return 0;
 }

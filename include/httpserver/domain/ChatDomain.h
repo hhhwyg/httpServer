@@ -31,6 +31,20 @@ struct Message {
   std::string createdAt;
 };
 
+// The durable acceptance boundary is kPersisted. Later stages describe
+// best-effort realtime delivery and are deliberately not client guarantees.
+enum class MessageDeliveryStage {
+  kReceived,
+  kPersisted,
+  kPublished,
+  kDelivered,
+};
+
+struct MessageAppendResult {
+  Message message;
+  bool inserted = false;
+};
+
 struct RoomSummary {
   std::string id;
   std::string name;
@@ -46,7 +60,6 @@ enum class ChatServiceError {
   kAlreadyMember,
   kNotMember,
   kOwnerCannotLeave,
-  kDuplicateMessage,
   kInvalidCursor,
 };
 
@@ -64,6 +77,7 @@ struct MessageHistoryResult {
   ChatServiceError error = ChatServiceError::kNone;
   std::vector<Message> messages;
   std::optional<std::string> nextBefore;
+  std::optional<std::string> nextAfter;
 };
 
 const char* ChatServiceErrorCode(ChatServiceError error);

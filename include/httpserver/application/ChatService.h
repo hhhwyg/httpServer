@@ -12,11 +12,24 @@
 
 namespace httpserver {
 
-struct MessageDispatchResult {
+struct SendMessageCommand {
+  std::string roomId;
+  std::string senderId;
+  std::string clientMessageId;
+  std::string content;
+  std::uint64_t senderSessionId = 0;
+};
+
+struct SendMessageResult {
   ChatServiceError error = ChatServiceError::kNone;
   Message message;
+  MessageDeliveryStage stage = MessageDeliveryStage::kReceived;
+  // false means this is an idempotent retry of an already persisted message.
+  bool inserted = false;
   std::vector<std::shared_ptr<ConnectionSession>> recipients;
 };
+
+using MessageDispatchResult = SendMessageResult;
 
 class ChatService {
  public:
@@ -31,6 +44,7 @@ class ChatService {
                              std::string_view roomId);
   RoomMembersResult ListMembers(std::string_view userId,
                                 std::string_view roomId) const;
+  SendMessageResult SendMessage(const SendMessageCommand& command);
   MessageDispatchResult DispatchMessage(
       std::string_view roomId, std::string_view senderId,
       std::string_view clientMessageId, std::string_view content,
@@ -39,6 +53,10 @@ class ChatService {
                                     std::string_view roomId,
                                     std::string_view before,
                                     std::size_t limit) const;
+  MessageHistoryResult ListMessagesAfter(std::string_view userId,
+                                         std::string_view roomId,
+                                         std::string_view after,
+                                         std::size_t limit) const;
 
   ChatServiceError AttachSession(
       std::string_view roomId,

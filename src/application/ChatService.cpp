@@ -36,6 +36,17 @@ std::optional<std::uint64_t> ParseCursor(std::string_view cursor) {
   return value;
 }
 
+std::optional<std::uint64_t> ParseAfterCursor(std::string_view cursor) {
+  if (cursor.empty()) return std::uint64_t{0};
+  std::uint64_t value = 0;
+  const auto result =
+      std::from_chars(cursor.data(), cursor.data() + cursor.size(), value);
+  if (result.ec != std::errc{} || result.ptr != cursor.data() + cursor.size()) {
+    return std::nullopt;
+  }
+  return value;
+}
+
 }  // namespace
 
 class ChatService::Impl {
@@ -70,8 +81,6 @@ const char* ChatServiceErrorCode(ChatServiceError error) {
       return "room_membership_required";
     case ChatServiceError::kOwnerCannotLeave:
       return "room_owner_cannot_leave";
-    case ChatServiceError::kDuplicateMessage:
-      return "duplicate_message";
     case ChatServiceError::kInvalidCursor:
       return "invalid_cursor";
   }
@@ -170,58 +179,58 @@ RoomMembersResult ChatService::ListMembers(std::string_view userId,
   return result;
 }
 
-MessageDispatchResult ChatService::DispatchMessage(
-    std::string_view roomId, std::string_view senderId,
-    std::string_view clientMessageId, std::string_view content,
-    std::uint64_t senderSessionId) {
-  if (roomId.empty() || senderId.empty() ||
-      !IsValidIdentifier(clientMessageId) || content.empty() ||
-      content.size() > 4096) {
-    return {ChatServiceError::kInvalidArgument, {}, {}};
+SendMessageResult ChatService::SendMessage(const SendMessageCommand& command) {
+  if (command.roomId.empty() || command.senderId.empty() ||
+      !IsValidIdentifier(command.clientMessageId) || command.content.empty() ||
+      command.content.size() > 4096 || command.senderSessionId == 0) {
+    return {ChatServiceError::kInvalidArgument, {},
+            MessageDeliveryStage::kReceived, false, {}};
   }
 
-  MessageDispatchResult result;
+  SendMessageResult result;
   std::lock_guard<std::mutex> lock(impl_->mutex);
-  if (!impl_->repository.Find(roomId).has_value()) {
+  if (!impl_->repository.Find(command.roomId).has_value()) {
     result.error = ChatServiceError::kRoomNotFound;
     return result;
   }
-  if (!impl_->repository.Contains(roomId, senderId)) {
+  if (!impl_->repository.Contains(command.roomId, command.senderId)) {
     result.error = ChatServiceError::kNotMember;
     return result;
   }
 
-  auto roomSessions = impl_->sessions.find(std::string(roomId));
+  auto roomSessions = impl_->sessions.find(command.roomId);
   if (roomSessions == impl_->sessions.end()) {
     result.error = ChatServiceError::kNotMember;
     return result;
   }
-  const auto sender = roomSessions->second.find(senderSessionId);
+  const auto sender = roomSessions->second.find(command.senderSessionId);
   if (sender == roomSessions->second.end() || sender->second.expired()) {
     if (sender != roomSessions->second.end()) roomSessions->second.erase(sender);
     result.error = ChatServiceError::kNotMember;
     return result;
   }
   const auto activeSender = sender->second.lock();
-  if (!activeSender || activeSender->userId() != senderId) {
+  if (!activeSender || activeSender->userId() != command.senderId) {
     result.error = ChatServiceError::kNotMember;
     return result;
   }
 
-  if (const auto duplicate = impl_->repository.FindByClientId(
-          roomId, senderId, clientMessageId);
-      duplicate.has_value()) {
-    result.error = ChatServiceError::kDuplicateMessage;
-    result.message = *duplicate;
+  const MessageAppendResult persisted = impl_->repository.AppendOrGet(
+      command.roomId, command.senderId, command.clientMessageId,
+      command.content);
+  result.message = persisted.message;
+  result.inserted = persisted.inserted;
+  result.stage = MessageDeliveryStage::kPersisted;
+  if (!result.inserted) {
     return result;
   }
 
-  result.message =
-      impl_->repository.Append(roomId, senderId, clientMessageId, content);
   for (auto session = roomSessions->second.begin();
        session != roomSessions->second.end();) {
     if (const auto active = session->second.lock()) {
-      if (session->first != senderSessionId) result.recipients.push_back(active);
+      if (session->first != command.senderSessionId) {
+        result.recipients.push_back(active);
+      }
       ++session;
     } else {
       session = roomSessions->second.erase(session);
@@ -230,23 +239,36 @@ MessageDispatchResult ChatService::DispatchMessage(
   return result;
 }
 
+MessageDispatchResult ChatService::DispatchMessage(
+    std::string_view roomId, std::string_view senderId,
+    std::string_view clientMessageId, std::string_view content,
+    std::uint64_t senderSessionId) {
+  return SendMessage({std::string(roomId), std::string(senderId),
+                      std::string(clientMessageId), std::string(content),
+                      senderSessionId});
+}
+
 MessageHistoryResult ChatService::ListMessages(
     std::string_view userId, std::string_view roomId, std::string_view before,
     std::size_t limit) const {
   if (userId.empty() || roomId.empty() || limit == 0 || limit > 100) {
-    return {ChatServiceError::kInvalidArgument, {}, std::nullopt};
+    return {ChatServiceError::kInvalidArgument, {}, std::nullopt,
+            std::nullopt};
   }
   const auto cursor = ParseCursor(before);
   if (!cursor.has_value()) {
-    return {ChatServiceError::kInvalidCursor, {}, std::nullopt};
+    return {ChatServiceError::kInvalidCursor, {}, std::nullopt,
+            std::nullopt};
   }
 
   std::lock_guard<std::mutex> lock(impl_->mutex);
   if (!impl_->repository.Find(roomId).has_value()) {
-    return {ChatServiceError::kRoomNotFound, {}, std::nullopt};
+    return {ChatServiceError::kRoomNotFound, {}, std::nullopt,
+            std::nullopt};
   }
   if (!impl_->repository.Contains(roomId, userId)) {
-    return {ChatServiceError::kNotMember, {}, std::nullopt};
+    return {ChatServiceError::kNotMember, {}, std::nullopt,
+            std::nullopt};
   }
 
   MessageHistoryResult result;
@@ -254,6 +276,37 @@ MessageHistoryResult ChatService::ListMessages(
   if (result.messages.size() > limit) {
     result.messages.erase(result.messages.begin());
     result.nextBefore = result.messages.front().id;
+  }
+  return result;
+}
+
+MessageHistoryResult ChatService::ListMessagesAfter(
+    std::string_view userId, std::string_view roomId, std::string_view after,
+    std::size_t limit) const {
+  if (userId.empty() || roomId.empty() || limit == 0 || limit > 100) {
+    return {ChatServiceError::kInvalidArgument, {}, std::nullopt,
+            std::nullopt};
+  }
+  const auto cursor = ParseAfterCursor(after);
+  if (!cursor.has_value()) {
+    return {ChatServiceError::kInvalidCursor, {}, std::nullopt,
+            std::nullopt};
+  }
+
+  std::lock_guard<std::mutex> lock(impl_->mutex);
+  if (!impl_->repository.Find(roomId).has_value()) {
+    return {ChatServiceError::kRoomNotFound, {}, std::nullopt,
+            std::nullopt};
+  }
+  if (!impl_->repository.Contains(roomId, userId)) {
+    return {ChatServiceError::kNotMember, {}, std::nullopt, std::nullopt};
+  }
+
+  MessageHistoryResult result;
+  result.messages = impl_->repository.ListAfter(roomId, *cursor, limit + 1);
+  if (result.messages.size() > limit) {
+    result.messages.pop_back();
+    result.nextAfter = result.messages.back().id;
   }
   return result;
 }
