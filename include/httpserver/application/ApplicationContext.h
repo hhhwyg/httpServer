@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -27,7 +28,8 @@ class ConnectionSession {
  public:
   virtual ~ConnectionSession() = default;
 
-  virtual int fd() const = 0;
+  virtual std::uint64_t sessionId() const = 0;
+  virtual std::string_view userId() const = 0;
   virtual void sendMessage(std::string_view message) = 0;
 };
 

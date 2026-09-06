@@ -19,7 +19,7 @@ target_include_directories(UringOperationRegistryTest PRIVATE
     ${PROJECT_SOURCE_DIR}/include
     ${PROJECT_SOURCE_DIR}/src
 )
-target_link_libraries(UringOperationRegistryTest PRIVATE httpserver_options)
+target_link_libraries(UringOperationRegistryTest PRIVATE httpserver::core)
 add_test(NAME base.uring_operation_registry COMMAND UringOperationRegistryTest)
 set_tests_properties(base.uring_operation_registry PROPERTIES LABELS "unit;uring")
 
@@ -133,19 +133,32 @@ add_test(
     NAME architecture.application_dependencies
     COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/architecture/ApplicationDependencyTest.sh
             ${PROJECT_SOURCE_DIR}/src/application/ApplicationRouter.cpp
+            ${PROJECT_SOURCE_DIR}/include/httpserver/domain
+            ${PROJECT_SOURCE_DIR}/src/application/ChatService.cpp
 )
 set_tests_properties(architecture.application_dependencies PROPERTIES
     LABELS "architecture;application"
 )
 
-add_executable(ChatRoomTest chat/ChatRoomTest.cpp)
-target_include_directories(ChatRoomTest PRIVATE
-    ${PROJECT_SOURCE_DIR}/src
-    ${HTTPSERVER_LEGACY_INCLUDE_DIRS}
+add_executable(ChatServiceTest application/ChatServiceTest.cpp)
+target_include_directories(ChatServiceTest PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
 )
-target_link_libraries(ChatRoomTest PRIVATE httpserver::core)
-add_test(NAME chat.room_membership COMMAND ChatRoomTest)
-set_tests_properties(chat.room_membership PROPERTIES LABELS "unit;chat")
+target_link_libraries(ChatServiceTest PRIVATE httpserver::core)
+add_test(NAME application.chat_service COMMAND ChatServiceTest)
+set_tests_properties(application.chat_service PROPERTIES
+    LABELS "unit;application;domain;chat"
+)
+
+add_executable(ChatProtocolTest application/ChatProtocolTest.cpp)
+target_include_directories(ChatProtocolTest PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+)
+target_link_libraries(ChatProtocolTest PRIVATE httpserver::core)
+add_test(NAME application.chat_protocol COMMAND ChatProtocolTest)
+set_tests_properties(application.chat_protocol PROPERTIES
+    LABELS "unit;application;protocol;chat"
+)
 
 add_test(
     NAME integration.http_smoke
@@ -177,6 +190,17 @@ add_test(
     NAME integration.websocket_smoke
     COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/WebSocketSmokeTest.py
             $<TARGET_FILE:WebServer> 18097
+)
+
+add_test(
+    NAME e2e.chat_business_flow
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/e2e/ChatBusinessFlowTest.py
+            $<TARGET_FILE:WebServer> 18310
+)
+set_tests_properties(e2e.chat_business_flow PROPERTIES
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    LABELS "e2e;application;domain;protocol;chat"
+    TIMEOUT 30
 )
 set_tests_properties(integration.websocket_smoke PROPERTIES
     WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}

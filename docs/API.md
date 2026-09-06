@@ -17,6 +17,10 @@ Room endpoints require `Authorization: Bearer <JWT>`:
 
 The response and WebSocket protocol use string room IDs consistently.
 
+New clients use the versioned `/api/v1/rooms` room, membership, and cursor-based
+message-history endpoints documented in [API_v1.md](API_v1.md). The `/room/*`
+routes remain a temporary compatibility layer.
+
 ## WebSocket
 
 Connect to `/ws?token=<JWT>`. Send a string `roomId` in `join` before sending

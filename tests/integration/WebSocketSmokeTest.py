@@ -124,6 +124,34 @@ def create_room(port, token):
         return response["roomId"]
 
 
+def request_json(port, token, method, path, body=None):
+    encoded_body = b"" if body is None else json.dumps(
+        body, separators=(",", ":")
+    ).encode("utf-8")
+    with socket.create_connection(("127.0.0.1", port), timeout=3) as sock:
+        sock.settimeout(3)
+        headers = (
+            f"{method} {path} HTTP/1.1\r\n"
+            "Host: localhost\r\n"
+            f"Authorization: Bearer {token}\r\n"
+            "Connection: close\r\n"
+        )
+        if body is not None:
+            headers += "Content-Type: application/json\r\n"
+        if body is not None or method in {"POST", "PUT", "PATCH"}:
+            headers += f"Content-Length: {len(encoded_body)}\r\n"
+        sock.sendall((headers + "\r\n").encode("ascii") + encoded_body)
+        status, headers, response_body = recv_http_response(sock)
+        try:
+            response = json.loads(response_body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise AssertionError(
+                f"expected JSON response for {method} {path}: "
+                f"status={status}, headers={headers}, body={response_body!r}"
+            ) from error
+        return status, response
+
+
 def assert_room_listed(port, token, room_id):
     with socket.create_connection(("127.0.0.1", port), timeout=3) as sock:
         sock.settimeout(3)
@@ -179,8 +207,43 @@ def main():
         wait_for_server(port)
         alice_token = make_token("phase2-alice")
         bob_token = make_token("phase2-bob")
+        charlie_token = make_token("phase2-charlie")
         room_id = create_room(port, alice_token)
         assert_room_listed(port, alice_token, room_id)
+
+        status, response = request_json(port, alice_token, "GET", "/api/v1/rooms")
+        assert status == 200
+        room = next(item for item in response["data"]["rooms"] if item["id"] == room_id)
+        assert room["ownerId"] == "phase2-alice"
+        assert room["memberCount"] == 1
+        assert room["joined"] is True
+
+        status, response = request_json(
+            port, bob_token, "POST", f"/api/v1/rooms/{room_id}/members"
+        )
+        assert status == 200 and response["data"]["joined"] is True
+        status, response = request_json(
+            port, bob_token, "GET", f"/api/v1/rooms/{room_id}/members"
+        )
+        assert status == 200
+        assert response["data"]["members"] == ["phase2-alice", "phase2-bob"]
+
+        status, response = request_json(
+            port, charlie_token, "POST", f"/api/v1/rooms/{room_id}/members"
+        )
+        assert status == 200 and response["data"]["joined"] is True
+        status, response = request_json(
+            port,
+            charlie_token,
+            "DELETE",
+            f"/api/v1/rooms/{room_id}/members/me",
+        )
+        assert status == 200 and response["data"]["roomId"] == room_id
+        status, response = request_json(
+            port, charlie_token, "GET", f"/api/v1/rooms/{room_id}/members"
+        )
+        assert status == 403
+        assert response["error"]["code"] == "room_membership_required"
 
         alice = connect_websocket(port, alice_token)
         bob = connect_websocket(port, bob_token)
@@ -212,7 +275,8 @@ def main():
             send_masked_frame(alice, 0x1, message.encode("utf-8"))
             opcode, payload = recv_frame(bob)
             assert opcode == 0x1
-            assert json.loads(payload.decode("utf-8")) == json.loads(message)
+            received = json.loads(payload.decode("utf-8"))
+            assert received == {**json.loads(message), "user": "phase2-alice"}
 
             reply = json.dumps(
                 {"type": "chat", "roomId": room_id, "content": "hello from bob"},
@@ -221,7 +285,8 @@ def main():
             send_masked_frame(bob, 0x1, reply.encode("utf-8"))
             opcode, payload = recv_frame(alice)
             assert opcode == 0x1
-            assert json.loads(payload.decode("utf-8")) == json.loads(reply)
+            received = json.loads(payload.decode("utf-8"))
+            assert received == {**json.loads(reply), "user": "phase2-bob"}
         finally:
             bob.close()
             alice.close()

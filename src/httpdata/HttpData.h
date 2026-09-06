@@ -52,7 +52,13 @@ enum ParseState {
 
 enum ConnectionState { H_CONNECTED = 0, H_DISCONNECTING, H_DISCONNECTED };
 
-enum HttpMethod { METHOD_POST = 1, METHOD_GET, METHOD_HEAD, METHOD_UNSUPPORTED };
+enum HttpMethod {
+  METHOD_POST = 1,
+  METHOD_GET,
+  METHOD_HEAD,
+  METHOD_DELETE,
+  METHOD_UNSUPPORTED
+};
 
 enum HttpVersion { HTTP_10 = 1, HTTP_11 };
 
@@ -78,7 +84,8 @@ class HttpData : public std::enable_shared_from_this<HttpData>,
   void sendResponse(int status, const std::string& type, const std::string& body);
   int getFd() {return fd_;}
   void sendMsg(const std::string& msg);
-  int fd() const override { return fd_; }
+  std::uint64_t sessionId() const override { return sessionId_; }
+  std::string_view userId() const override { return authenticatedUser_; }
   void sendMessage(std::string_view message) override {
     sendMsg(std::string(message));
   }
@@ -90,6 +97,8 @@ class HttpData : public std::enable_shared_from_this<HttpData>,
   httpserver::ChannelPtr channel_;
   httpserver::StaticFileService staticFileService_;
   int fd_;
+  std::uint64_t sessionId_;
+  std::string authenticatedUser_;
   ChainBuffer inBuffer_;
   ChainBuffer outBuffer_;
   std::string responseHeader_;

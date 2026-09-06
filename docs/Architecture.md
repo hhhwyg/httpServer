@@ -25,10 +25,13 @@ Protocol and application code may use transport interfaces, but the reverse
 dependency is prohibited. `ApplicationRouter` owns HTTP route dispatch and
 route-level authentication responses; `OperationalStatus` is the only
 application-facing adapter for readiness and infrastructure metrics.
-`ChatApplication` owns room membership
-and chat message use cases; it receives a callback for connection writes
+`ChatService` owns room, membership and message use cases through
+`RoomRepository`, `MembershipRepository` and `MessageRepository` interfaces.
+The current in-memory adapter can be replaced by persistent repositories without
+changing HTTP or WebSocket contracts. `ChatApplication` translates protocol
+commands into service calls and receives a callback for connection writes
 instead of reaching into the session's output buffer.
 
-`architecture.application_dependencies` is a lightweight regression test for
-this rule: the HTTP router may include public application interfaces, but must
-not include `ChatManager`, `SqlConnPool`, or `CryptoUtil` implementation headers.
+`architecture.application_dependencies` checks that the HTTP router avoids
+infrastructure implementation headers, domain headers remain pure, and
+`ChatService` does not reach into transport or database implementations.

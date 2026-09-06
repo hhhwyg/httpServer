@@ -1,6 +1,10 @@
 #include "httpserver/application/UserRepository.h"
 
 #include <array>
+#include <cstdlib>
+#include <mutex>
+#include <string>
+#include <unordered_map>
 
 #include "SqlConnPool.h"
 
@@ -101,9 +105,38 @@ class MysqlUserRepository final : public UserRepository {
   }
 };
 
+class InMemoryUserRepository final : public UserRepository {
+ public:
+  bool available() const override { return true; }
+
+  bool create(std::string_view username,
+              std::string_view passwordHash) override {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return users_.emplace(std::string(username), std::string(passwordHash))
+        .second;
+  }
+
+  std::optional<std::string> passwordHashFor(
+      std::string_view username) override {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto user = users_.find(std::string(username));
+    return user == users_.end() ? std::nullopt
+                                : std::optional<std::string>(user->second);
+  }
+
+ private:
+  std::mutex mutex_;
+  std::unordered_map<std::string, std::string> users_;
+};
+
 }  // namespace
 
 UserRepository& GetUserRepository() {
+  if (const char* backend = std::getenv("HTTPSERVER_AUTH_STORE");
+      backend != nullptr && std::string_view(backend) == "memory") {
+    static InMemoryUserRepository memoryRepository;
+    return memoryRepository;
+  }
   static MysqlUserRepository repository;
   return repository;
 }

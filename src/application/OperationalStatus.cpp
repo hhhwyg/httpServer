@@ -1,6 +1,6 @@
 #include "httpserver/application/OperationalStatus.h"
 
-#include "ChatManager.h"
+#include "httpserver/application/ChatService.h"
 #include "CryptoUtil.h"
 #include "SqlConnPool.h"
 #include "httpserver/application/Metrics.h"
@@ -14,7 +14,7 @@ bool OperationalStatus::ready() {
 
 std::string OperationalStatus::prometheusMetrics() {
   SqlConnPool* pool = SqlConnPool::Instance();
-  return Metrics::Render(ChatManager::getInstance().roomCount(),
+  return Metrics::Render(static_cast<int>(ChatService::Instance().RoomCount()),
                          pool->GetFreeConnCount(), pool->GetUseConnCount());
 }
 

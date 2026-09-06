@@ -22,6 +22,8 @@ set(HTTPSERVER_CORE_SOURCES
     src/application/OperationalStatus.cpp
     src/application/ApplicationRouter.cpp
     src/application/ChatApplication.cpp
+    src/application/ChatService.cpp
+    src/application/InMemoryChatRepository.cpp
     src/config/ServerConfig.cpp
     src/base/AsyncLogging.cpp
     src/base/CountDownLatch.cpp
@@ -31,8 +33,6 @@ set(HTTPSERVER_CORE_SOURCES
     src/base/LogStream.cpp
     src/base/Thread.cpp
     src/channel/Channel.cpp
-    src/chat/ChatManager.cpp
-    src/chat/ChatRoom.cpp
     src/chat/RoomController.cpp
     src/chat/UserController.cpp
     src/epoll/Epoll.cpp
@@ -45,6 +45,7 @@ set(HTTPSERVER_CORE_SOURCES
     src/httpdata/MimeType.cpp
     src/httpdata/StaticFile.cpp
     src/httpdata/WebSocket.cpp
+    src/protocol/ChatProtocol.cpp
     src/server/Server.cpp
     src/sql/SqlConnPool.cpp
     src/sql/UserRepository.cpp

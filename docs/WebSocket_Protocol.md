@@ -22,28 +22,16 @@ ws://127.0.0.1:8088/ws?token=<JWT>
 
 ## JSON 契约
 
-`roomId` 固定为字符串，聊天内容字段固定为 `content`。客户端发送：
+新客户端统一使用 `version=1` envelope，命令包括 `room.subscribe` 和 `message.send`。服务端响应包括 `room.subscribed`、`message.ack`、`message.created` 和 `error`。完整字段与示例见 [API_v1.md](API_v1.md)。
 
-```json
-{"type":"join","roomId":"10000001"}
-```
+`requestId`、`roomId`、`clientMessageId` 都是 1 至 128 字节的非空字符串，单条 `content` 为 1 至 4096 字节。缺失字段、错误类型、未知版本和未知消息类型都会返回带稳定错误码的 v1 `error` envelope，不再静默忽略。
 
-```json
-{"type":"chat","roomId":"10000001","content":"hello"}
-```
-
-服务端向房间内其他客户端广播：
-
-```json
-{"type":"chat","roomId":"10000001","content":"hello"}
-```
-
-单条 `content` 最长 4096 字节。不是该契约的 JSON 消息会被忽略；畸形 WebSocket 帧会关闭连接。
+旧 `join/chat` JSON 暂时只作为兼容层保留，新前端和新测试不再依赖它。
 
 ## 房间权限与断线
 
-客户端必须先发送 `join`，服务端才接受该客户端对房间的 `chat`。连接关闭时服务端会从所有房间移除该连接；不存在的房间或未加入房间会收到 `type=error` 的 JSON 消息。
+客户端必须先通过 HTTP 成为房间成员，再发送 `room.subscribe` 挂载当前连接。只有同时满足成员关系和连接订阅，服务端才接受 `message.send`。退出房间会立即移除该用户在房间中的在线连接；连接关闭时也会从所有房间移除该 session。
 
 ## 验证
 
-`integration.websocket_smoke` 使用临时 JWT 启动真实服务，覆盖认证建房、房间列表、WebSocket 握手、ping/pong、无效房间错误，以及两个客户端加入同一房间后的双向文本广播。
+`application.chat_protocol` 覆盖协议字段、类型、版本和大小限制；`e2e.chat_business_flow` 覆盖注册登录、成员权限、ACK、实时推送、重复消息、历史游标和退出后的权限撤销。`integration.websocket_smoke` 继续覆盖旧协议兼容性和 WebSocket 帧行为。

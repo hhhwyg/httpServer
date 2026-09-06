@@ -16,6 +16,15 @@
 #include "CryptoUtil.h"
 
 int main(int argc, char* argv[]) {
+  sigset_t shutdownSignals;
+  sigemptyset(&shutdownSignals);
+  sigaddset(&shutdownSignals, SIGINT);
+  sigaddset(&shutdownSignals, SIGTERM);
+  if (pthread_sigmask(SIG_BLOCK, &shutdownSignals, nullptr) != 0) {
+    fprintf(stderr, "Unable to block shutdown signals\n");
+    return 1;
+  }
+
   int threadNum = 6;
   int port = 8088;
   std::string logPath = "./WebServer.log";
@@ -92,14 +101,6 @@ int main(int argc, char* argv[]) {
       << " backend";
   httpserver::EventLoop mainLoop(backend, pollerConfig);  // 主线程只负责接收 socket 连接
   Server myHTTPServer(&mainLoop, threadNum, port, backend, pollerConfig);
-  sigset_t shutdownSignals;
-  sigemptyset(&shutdownSignals);
-  sigaddset(&shutdownSignals, SIGINT);
-  sigaddset(&shutdownSignals, SIGTERM);
-  if (pthread_sigmask(SIG_BLOCK, &shutdownSignals, nullptr) != 0) {
-    LOG << "Unable to block shutdown signals";
-    return 1;
-  }
   const int signalFd = signalfd(-1, &shutdownSignals, SFD_NONBLOCK | SFD_CLOEXEC);
   if (signalFd < 0) {
     LOG << "Unable to create shutdown signal fd";

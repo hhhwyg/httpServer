@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <atomic>
 #include <arpa/inet.h>
 #include <cctype>
 #include <cstdint>
@@ -28,6 +29,8 @@ constexpr std::size_t kMaxBodyBytes = 1024 * 1024;
 constexpr std::size_t kMaxWebSocketPayloadBytes = 1024 * 1024;
 
 namespace {
+
+std::atomic<std::uint64_t> nextSessionId{1};
 
 std::string toLower(std::string value) {
   std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
@@ -209,7 +212,7 @@ HttpData::HttpData(httpserver::EventLoop* loop, int connfd)
     : loop_(loop),
       channel_(new httpserver::Channel(loop, connfd)),
       fd_(connfd),
-      peerAddress_(peerAddressFor(connfd)),
+      sessionId_(nextSessionId.fetch_add(1, std::memory_order_relaxed)),
       error_(false),
       closed_(false),
       connectionState_(H_CONNECTED),
@@ -217,6 +220,7 @@ HttpData::HttpData(httpserver::EventLoop* loop, int connfd)
       bodySendIdx_(0),
       method_(METHOD_GET),
       HTTPVersion_(HTTP_11),
+      peerAddress_(peerAddressFor(connfd)),
       nowReadPos_(0),
       state_(STATE_PARSE_URI),
       hState_(H_START),
@@ -502,7 +506,7 @@ void HttpData::handleWebSocketFrame() {
 
     const auto self = shared_from_this();
     httpserver::ChatApplication::HandleMessage(
-        payload, fd_, self,
+        payload, self,
         [self](const std::string& message) { self->sendMsg(message); });
   }
 }
@@ -603,6 +607,7 @@ URIState HttpData::parseURI() {
   if (parsed->method == "GET") method_ = METHOD_GET;
   else if (parsed->method == "POST") method_ = METHOD_POST;
   else if (parsed->method == "HEAD") method_ = METHOD_HEAD;
+  else if (parsed->method == "DELETE") method_ = METHOD_DELETE;
   else method_ = METHOD_UNSUPPORTED;
 
   if (parsed->version == "HTTP/1.1") HTTPVersion_ = HTTP_11;
@@ -683,7 +688,7 @@ AnalysisState HttpData::handleWebSocketHandshake() {
         return ANALYSIS_ERROR;
     }
 
-    // The verified subject is available in *username for future session binding.
+    authenticatedUser_ = *username;
 
     // 5. 计算 Accept Key
     const std::string clientKey = headers_["sec-websocket-key"];
@@ -725,6 +730,9 @@ AnalysisState HttpData::analysisRequest() {
         break;
       case METHOD_HEAD:
         method = "HEAD";
+        break;
+      case METHOD_DELETE:
+        method = "DELETE";
         break;
       case METHOD_UNSUPPORTED:
         method = "";
@@ -819,9 +827,7 @@ void HttpData::handleClose() {
     channel_->clearOwner();
   }
   separateTimer();
-  if (fd_ >= 0) {
-    httpserver::ChatApplication::Leave(fd_);
-  }
+  httpserver::ChatApplication::Leave(sessionId_);
   if (fd_ >= 0) {
     close(fd_);
     fd_ = -1;
