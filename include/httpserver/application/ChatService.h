@@ -9,6 +9,7 @@
 
 #include "httpserver/application/ApplicationContext.h"
 #include "httpserver/domain/ChatDomain.h"
+#include "httpserver/domain/ChatRepositories.h"
 
 namespace httpserver {
 
@@ -34,6 +35,12 @@ using MessageDispatchResult = SendMessageResult;
 class ChatService {
  public:
   static ChatService& Instance();
+
+  void ConfigureRepository(std::unique_ptr<ChatRepository> repository);
+  void ConfigureMessageRateLimit(int maxMessages, int windowSeconds);
+  bool AllowMessage(std::string_view userId) const;
+  bool persistenceAvailable() const;
+  bool outboxEnabled() const;
 
   CreateRoomResult CreateRoom(std::string_view ownerId,
                               std::string_view name);
@@ -65,9 +72,14 @@ class ChatService {
   ChatServiceError Broadcast(std::string_view roomId,
                              std::string_view message,
                              std::uint64_t senderSessionId);
+  // Called by the Redis subscriber thread. ConnectionSession::sendMessage
+  // queues delivery to the owning EventLoop, so no transport state is touched
+  // while this method holds the session registry lock.
+  bool DeliverOutboxEvent(std::string_view event);
   void DetachSession(std::uint64_t sessionId);
 
   std::size_t RoomCount() const;
+  std::size_t CachedRoomCount() const;
   void ResetForTesting();
 
  private:

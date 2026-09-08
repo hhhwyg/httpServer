@@ -27,6 +27,9 @@ void testJwtValidation() {
   const auto subject = CryptoUtil::verifyAndExtractUsername(token);
   assert(subject.has_value());
   assert(*subject == "alice");
+  const auto claims = CryptoUtil::verifyAndExtractClaims(token);
+  assert(claims.has_value());
+  assert(!claims->jti.empty());
 
   const httpserver::HeaderMap headers{{"authorization", "Bearer " + token}};
   const auto requestSubject =

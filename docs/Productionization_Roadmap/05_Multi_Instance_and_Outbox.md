@@ -1,5 +1,18 @@
 # M5：多实例广播与 Transactional Outbox
 
+## 完成状态
+
+已完成。`messages` 与 `message_outbox` 在 `MySqlChatRepository::AppendOrGet` 的同一事务中写入；`002_outbox_leases.sql` 为 Publisher 提供租约字段和领取索引。`OutboxPublisher` 在独立线程中使用短事务领取事件，事务外执行 Redis `PUBLISH`，再以独立短事务标记成功或增加 attempts 并按指数退避安排重试。
+
+| 能力 | 实现 | 验收结果 |
+| --- | --- | --- |
+| 跨实例投递 | 专用 Redis 订阅连接调用 `ChatService::DeliverOutboxEvent`，按本地 room session 过滤 | 两个实例各收到一条 `message.created`，发送端先获得 ACK |
+| 去重 | `eventId` 十分钟 TTL、最大 10000 条；客户端仍以 `messageId` 作为最终幂等键 | `ChatServiceTest` 对同一 eventId 二次投递仅允许首次广播 |
+| Outbox 恢复 | Redis 中断期间 MySQL/Outbox 保留未发布事件；恢复后 Publisher 自动重试 | `outbox_recovery_acceptance persisted=1 retried=1 published=1` |
+| 运行态 | `/metrics` 暴露 claimed/published/publish_failures 计数 | 可与 `published_at`、attempts、lease 字段共同核验 |
+
+`docker-compose.scale.yml` 提供共享 MySQL/Redis 的 `instance-a` 与 `instance-b`，分别暴露 `18080`、`18081`，并使用稳定的 `instanceId`/publisher ID。
+
 ## 目标
 
 让连接到不同 WebServer 实例的同房间用户能够实时通信，并处理“MySQL 已提交但 Redis 未发布”和“事件重复发布”两类一致性问题。完成态为两实例可互发、发布失败可恢复、重复事件不重复展示。
@@ -50,8 +63,8 @@ Pub/Sub 至多一次，因此客户端断线或订阅重连期间的遗漏消息
 
 ```bash
 docker compose -f docker-compose.scale.yml up -d --build
-python3 tests/e2e/CrossInstanceChatTest.py https://localhost
-python3 tests/integration/OutboxRecoveryTest.py
+python3 tests/e2e/CrossInstanceChatTest.py 18080 18081
+python3 tests/integration/OutboxRecoveryTest.py 18080
 ```
 
 跨实例测试必须确认两个客户端被路由到不同 `instanceId`，随后完成双向发送、ACK 和广播。Outbox 测试在 MySQL 提交后、Redis 发布前停止实例，重启后消息最终到达；在发布后、标记前停止实例，重启后客户端最终只显示一条逻辑消息。

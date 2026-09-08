@@ -1,10 +1,13 @@
 #include "RoomController.h"
 
 #include <charconv>
+#include <chrono>
 #include <exception>
 #include <optional>
 
 #include "httpserver/application/ChatService.h"
+#include "httpserver/application/AuthenticationRateLimiter.h"
+#include "httpserver/application/DatabaseExecutor.h"
 #include "httpserver/protocol/HttpRequest.h"
 #include "json.hpp"
 
@@ -78,10 +81,33 @@ int ErrorStatus(ChatServiceError error) {
       return 409;
     case ChatServiceError::kInvalidCursor:
       return 400;
+    case ChatServiceError::kDependencyUnavailable:
+      return 503;
     case ChatServiceError::kNone:
       return 200;
   }
   return 500;
+}
+
+bool SubmitDatabaseWork(const ResponseSender& sendResponse,
+                        std::function<void()> work) {
+  if (DatabaseExecutor::Submit([sendResponse, work = std::move(work)] {
+        try {
+          work();
+        } catch (const std::exception&) {
+          SendV1Error(sendResponse, 503,
+                      ChatServiceError::kDependencyUnavailable,
+                      "database operation failed");
+        }
+      }, std::chrono::seconds(3), [sendResponse] {
+        SendV1Error(sendResponse, 503, ChatServiceError::kDependencyUnavailable,
+                    "database operation deadline exceeded");
+      })) {
+    return true;
+  }
+  SendV1Error(sendResponse, 503, ChatServiceError::kDependencyUnavailable,
+              "database operation queue is full");
+  return false;
 }
 
 }  // namespace
@@ -95,25 +121,36 @@ void handleCreateRoom(const ApplicationRequest& request,
                  "{\"ok\":false,\"msg\":\"Invalid room name\"}");
     return;
   }
-  const CreateRoomResult result =
-      ChatService::Instance().CreateRoom(userId, *roomName);
-  if (result.error != ChatServiceError::kNone) {
-    sendResponse(400, "application/json",
-                 "{\"ok\":false,\"msg\":\"Invalid room name\"}");
-    return;
-  }
-  sendResponse(200, "application/json",
-               json{{"ok", true}, {"roomId", result.room.id}}.dump());
+  const std::string owner(userId);
+  SubmitDatabaseWork(sendResponse, [owner, name = *roomName, sendResponse] {
+    if (!AuthenticationRateLimiter::AllowDistributed("room:create", owner)) {
+      sendResponse(429, "application/json",
+                   "{\"ok\":false,\"msg\":\"Too many requests\"}");
+      return;
+    }
+    const CreateRoomResult result =
+        ChatService::Instance().CreateRoom(owner, name);
+    if (result.error != ChatServiceError::kNone) {
+      sendResponse(400, "application/json",
+                   "{\"ok\":false,\"msg\":\"Invalid room name\"}");
+      return;
+    }
+    sendResponse(200, "application/json",
+                 json{{"ok", true}, {"roomId", result.room.id}}.dump());
+  });
 }
 
 void handleGetRoomList(std::string_view userId,
                        const ResponseSender& sendResponse) {
-  json response = {{"ok", true}, {"rooms", json::array()}};
-  for (const RoomSummary& room : ChatService::Instance().ListRooms(userId)) {
-    response["rooms"].push_back(
-        {{"id", room.id}, {"name", room.name}});
-  }
-  sendResponse(200, "application/json", response.dump());
+  const std::string member(userId);
+  SubmitDatabaseWork(sendResponse, [member, sendResponse] {
+    json response = {{"ok", true}, {"rooms", json::array()}};
+    for (const RoomSummary& room : ChatService::Instance().ListRooms(member)) {
+      response["rooms"].push_back(
+          {{"id", room.id}, {"name", room.name}});
+    }
+    sendResponse(200, "application/json", response.dump());
+  });
 }
 
 void handleCreateRoomV1(const ApplicationRequest& request,
@@ -125,84 +162,108 @@ void handleCreateRoomV1(const ApplicationRequest& request,
                 "room name must be a string");
     return;
   }
-  const CreateRoomResult result =
-      ChatService::Instance().CreateRoom(userId, *roomName);
-  if (result.error != ChatServiceError::kNone) {
-    SendV1Error(sendResponse, ErrorStatus(result.error), result.error,
-                "room name must contain 1 to 128 non-whitespace bytes");
-    return;
-  }
-  sendResponse(201, "application/json",
-               json{{"ok", true}, {"data", {{"room", RoomJson(result.room)}}}}
-                   .dump());
+  const std::string owner(userId);
+  SubmitDatabaseWork(sendResponse, [owner, name = *roomName, sendResponse] {
+    if (!AuthenticationRateLimiter::AllowDistributed("room:create", owner)) {
+      sendResponse(429, "application/json",
+                   json{{"ok", false},
+                        {"error", {{"code", "rate_limited"},
+                                   {"message", "too many room creation requests"}}}}
+                       .dump());
+      return;
+    }
+    const CreateRoomResult result =
+        ChatService::Instance().CreateRoom(owner, name);
+    if (result.error != ChatServiceError::kNone) {
+      SendV1Error(sendResponse, ErrorStatus(result.error), result.error,
+                  "room name must contain 1 to 128 non-whitespace bytes");
+      return;
+    }
+    sendResponse(201, "application/json",
+                 json{{"ok", true}, {"data", {{"room", RoomJson(result.room)}}}}
+                     .dump());
+  });
 }
 
 void handleGetRoomListV1(std::string_view userId,
                          const ResponseSender& sendResponse) {
-  json rooms = json::array();
-  for (const RoomSummary& room : ChatService::Instance().ListRooms(userId)) {
-    rooms.push_back(RoomJson(room));
-  }
-  sendResponse(200, "application/json",
-               json{{"ok", true}, {"data", {{"rooms", rooms}}}}.dump());
+  const std::string member(userId);
+  SubmitDatabaseWork(sendResponse, [member, sendResponse] {
+    json rooms = json::array();
+    for (const RoomSummary& room : ChatService::Instance().ListRooms(member)) {
+      rooms.push_back(RoomJson(room));
+    }
+    sendResponse(200, "application/json",
+                 json{{"ok", true}, {"data", {{"rooms", rooms}}}}.dump());
+  });
 }
 
 void handleJoinRoomV1(std::string_view roomId, std::string_view userId,
                       const ResponseSender& sendResponse) {
-  const ChatServiceError error =
-      ChatService::Instance().JoinRoom(userId, roomId);
-  if (error == ChatServiceError::kAlreadyMember) {
+  const std::string room(roomId);
+  const std::string member(userId);
+  SubmitDatabaseWork(sendResponse, [room, member, sendResponse] {
+    const ChatServiceError error = ChatService::Instance().JoinRoom(member, room);
+    if (error == ChatServiceError::kAlreadyMember) {
+      sendResponse(200, "application/json",
+                   json{{"ok", true},
+                        {"data", {{"roomId", room}, {"joined", false}}}}
+                       .dump());
+      return;
+    }
+    if (error != ChatServiceError::kNone) {
+      SendV1Error(sendResponse, ErrorStatus(error), error,
+                  error == ChatServiceError::kRoomNotFound
+                      ? "room does not exist"
+                      : "unable to join room");
+      return;
+    }
     sendResponse(200, "application/json",
                  json{{"ok", true},
-                      {"data", {{"roomId", roomId}, {"joined", false}}}}
+                      {"data", {{"roomId", room}, {"joined", true}}}}
                      .dump());
-    return;
-  }
-  if (error != ChatServiceError::kNone) {
-    SendV1Error(sendResponse, ErrorStatus(error), error,
-                error == ChatServiceError::kRoomNotFound
-                    ? "room does not exist"
-                    : "unable to join room");
-    return;
-  }
-  sendResponse(200, "application/json",
-               json{{"ok", true},
-                    {"data", {{"roomId", roomId}, {"joined", true}}}}
-                   .dump());
+  });
 }
 
 void handleLeaveRoomV1(std::string_view roomId, std::string_view userId,
                        const ResponseSender& sendResponse) {
-  const ChatServiceError error =
-      ChatService::Instance().LeaveRoom(userId, roomId);
-  if (error != ChatServiceError::kNone) {
-    SendV1Error(sendResponse, ErrorStatus(error), error,
-                error == ChatServiceError::kOwnerCannotLeave
-                    ? "room owner cannot leave the room"
-                    : "unable to leave room");
-    return;
-  }
-  sendResponse(200, "application/json",
-               json{{"ok", true}, {"data", {{"roomId", roomId}}}}.dump());
+  const std::string room(roomId);
+  const std::string member(userId);
+  SubmitDatabaseWork(sendResponse, [room, member, sendResponse] {
+    const ChatServiceError error = ChatService::Instance().LeaveRoom(member, room);
+    if (error != ChatServiceError::kNone) {
+      SendV1Error(sendResponse, ErrorStatus(error), error,
+                  error == ChatServiceError::kOwnerCannotLeave
+                      ? "room owner cannot leave the room"
+                      : "unable to leave room");
+      return;
+    }
+    sendResponse(200, "application/json",
+                 json{{"ok", true}, {"data", {{"roomId", room}}}}.dump());
+  });
 }
 
 void handleGetRoomMembersV1(std::string_view roomId,
                             std::string_view userId,
                             const ResponseSender& sendResponse) {
-  const RoomMembersResult result =
-      ChatService::Instance().ListMembers(userId, roomId);
-  if (result.error != ChatServiceError::kNone) {
-    SendV1Error(sendResponse, ErrorStatus(result.error), result.error,
-                result.error == ChatServiceError::kRoomNotFound
-                    ? "room does not exist"
-                    : "room membership is required");
-    return;
-  }
-  sendResponse(200, "application/json",
-               json{{"ok", true},
-                    {"data", {{"roomId", roomId},
-                              {"members", result.members}}}}
-                   .dump());
+  const std::string room(roomId);
+  const std::string member(userId);
+  SubmitDatabaseWork(sendResponse, [room, member, sendResponse] {
+    const RoomMembersResult result =
+        ChatService::Instance().ListMembers(member, room);
+    if (result.error != ChatServiceError::kNone) {
+      SendV1Error(sendResponse, ErrorStatus(result.error), result.error,
+                  result.error == ChatServiceError::kRoomNotFound
+                      ? "room does not exist"
+                      : "room membership is required");
+      return;
+    }
+    sendResponse(200, "application/json",
+                 json{{"ok", true},
+                      {"data", {{"roomId", room},
+                                {"members", result.members}}}}
+                     .dump());
+  });
 }
 
 void handleGetRoomMessagesV1(const ApplicationRequest& request,
@@ -224,36 +285,40 @@ void handleGetRoomMessagesV1(const ApplicationRequest& request,
   }
   const bool incremental = !after.empty() ||
                            request.query.find("after=") != std::string::npos;
-  const MessageHistoryResult result =
-      incremental ? ChatService::Instance().ListMessagesAfter(userId, roomId,
-                                                               after, *limit)
-                  : ChatService::Instance().ListMessages(userId, roomId,
-                                                         before, *limit);
-  if (result.error != ChatServiceError::kNone) {
-    SendV1Error(sendResponse, ErrorStatus(result.error), result.error,
-                result.error == ChatServiceError::kInvalidCursor
-                    ? "before and after must be server message IDs"
-                    : result.error == ChatServiceError::kRoomNotFound
-                          ? "room does not exist"
-                          : "room membership is required");
-    return;
-  }
-
-  json messages = json::array();
-  for (const Message& message : result.messages) {
-    messages.push_back(MessageJson(message));
-  }
-  json nextBefore = result.nextBefore.has_value()
-                        ? json(*result.nextBefore)
-                        : json(nullptr);
-  json nextAfter = result.nextAfter.has_value() ? json(*result.nextAfter)
-                                                 : json(nullptr);
-  sendResponse(200, "application/json",
-               json{{"ok", true},
-                    {"data", {{"messages", messages},
-                              {"nextBefore", nextBefore},
-                              {"nextAfter", nextAfter}}}}
-                   .dump());
+  const std::string room(roomId);
+  const std::string member(userId);
+  SubmitDatabaseWork(sendResponse, [room, member, before, after, limit = *limit,
+                                    incremental, sendResponse] {
+    const MessageHistoryResult result =
+        incremental ? ChatService::Instance().ListMessagesAfter(member, room,
+                                                                 after, limit)
+                    : ChatService::Instance().ListMessages(member, room,
+                                                           before, limit);
+    if (result.error != ChatServiceError::kNone) {
+      SendV1Error(sendResponse, ErrorStatus(result.error), result.error,
+                  result.error == ChatServiceError::kInvalidCursor
+                      ? "before and after must be server message IDs"
+                      : result.error == ChatServiceError::kRoomNotFound
+                            ? "room does not exist"
+                            : "room membership is required");
+      return;
+    }
+    json messages = json::array();
+    for (const Message& message : result.messages) {
+      messages.push_back(MessageJson(message));
+    }
+    const json nextBefore = result.nextBefore.has_value()
+                                ? json(*result.nextBefore)
+                                : json(nullptr);
+    const json nextAfter = result.nextAfter.has_value() ? json(*result.nextAfter)
+                                                         : json(nullptr);
+    sendResponse(200, "application/json",
+                 json{{"ok", true},
+                      {"data", {{"messages", messages},
+                                {"nextBefore", nextBefore},
+                                {"nextAfter", nextAfter}}}}
+                     .dump());
+  });
 }
 
 }  // namespace httpserver::RoomController

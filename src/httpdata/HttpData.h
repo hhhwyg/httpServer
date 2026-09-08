@@ -6,6 +6,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <vector>
 #include <unordered_map>
 #include <cstdint>
 #include "base/ChainBuffer.h"
@@ -83,12 +84,19 @@ class HttpData : public std::enable_shared_from_this<HttpData>,
   ChainBuffer& getOutBuffer();
   void ctlHandleWrite();
   void sendResponse(int status, const std::string& type, const std::string& body);
+  static void ConfigureOutputBufferLimits(std::size_t highWaterBytes,
+                                          std::size_t hardLimitBytes);
+  static void ConfigureWebSocketOrigins(std::vector<std::string> origins,
+                                        bool requireOrigin);
+  // Stop application work and send a WebSocket 1001 close frame where the
+  // peer can still receive it. Called by the signal-driven shutdown path.
+  static void BeginGracefulShutdown();
   int getFd() {return fd_;}
   void sendMsg(const std::string& msg);
   std::uint64_t sessionId() const override { return sessionId_; }
   std::string_view userId() const override { return authenticatedUser_; }
   void sendMessage(std::string_view message) override {
-    sendMsg(std::string(message));
+    sendNonCriticalMessage(std::string(message));
   }
 
    void init();
@@ -100,6 +108,7 @@ class HttpData : public std::enable_shared_from_this<HttpData>,
   int fd_;
   std::uint64_t sessionId_;
   std::string authenticatedUser_;
+  std::string requestId_;
   ChainBuffer inBuffer_;
   ChainBuffer outBuffer_;
   std::string responseHeader_;
@@ -127,7 +136,10 @@ class HttpData : public std::enable_shared_from_this<HttpData>,
   std::string webSocketFragment_;
   bool webSocketFragmented_ = false;
   bool closeAfterWrite_ = false;
+  bool draining_ = false;
   bool requestInFlight_ = false;
+  std::chrono::steady_clock::time_point requestStartedAt_{};
+  bool requestTimingActive_ = false;
   std::chrono::steady_clock::time_point lastTimerRefresh_{};
   bool timerRefreshInitialized_ = false;
   
@@ -144,6 +156,10 @@ class HttpData : public std::enable_shared_from_this<HttpData>,
   void handleWebSocketFrame();
   void closeWebSocket(std::uint16_t code, const std::string& reason = {});
   void handleWriteInLoop(const std::string& msg);
+  void sendNonCriticalMessage(std::string msg);
+  bool appendOutput(std::string_view output, bool nonCritical);
+  void recordHttpResponse(int status);
+  void initializeRequestId();
   void completeApplicationResponse(int status, std::string type,
                                    std::string body);
   AnalysisState handleStaticFile();

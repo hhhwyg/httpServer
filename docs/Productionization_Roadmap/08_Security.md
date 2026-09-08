@@ -1,5 +1,7 @@
 # M8：安全与滥用防护
 
+> 完成状态：已完成（2026-09-06）。威胁模型、JWT `jti` denylist、Origin 双重校验、分布式滥用限流、最小权限入口和安全回归已落地；扫描在 CI/release 阶段执行。
+
 ## 目标
 
 让服务可以在 Nginx 和最小权限网络边界后公开访问，重点防止认证绕过、越权访问、暴力尝试、输入耗尽、注入、敏感信息泄露和不受信任 WebSocket 来源。安全结论以威胁模型和测试为依据。
@@ -56,3 +58,17 @@ trivy image httpserver:release
 - 分布式滥用限流
 - 安全测试、secret 扫描和镜像扫描
 - 网络与容器最小权限配置
+
+## 实施结果与验收
+
+`docs/Threat_Model.md` 记录资产、信任边界、攻击路径、控制和残余风险。JWT 新签发 token 包含随机 `jti`，`POST /logout` 以剩余 TTL 写 Redis denylist；配置 Redis 后 denylist 查询失败会拒绝受保护请求。密码继续使用版本化 scrypt hash，MySQL 使用 prepared statement，Redis 通过 argv API 传入所有用户数据。真实 Redis 验收确认 token 在 logout 前为 200、logout 返回 204、之后同 token 为 401。
+
+`HTTPSERVER_WS_ALLOWED_ORIGINS` 配置 HTTPS Origin 白名单；应用与 `deploy/nginx/httpserver.conf.template` 都执行该校验，公网代理拒绝 query token。`docker-compose.production.yml` 只发布 Nginx 的 80/443，WebServer 非 root、只读根文件系统、限制 PID/内存并移除 capability；MySQL/Redis 仅在 Compose 网络可达。
+
+```bash
+ctest --test-dir build/debug -L security --output-on-failure
+ctest --test-dir build/asan -L security --output-on-failure
+# 结果：两组均 6/6 通过（scrypt/JWT、配置校验、限流、账号枚举、Origin、授权矩阵）。
+```
+
+其中 `security.authentication_abuse` 验证未知账号与错误密码同样返回 401、窗口限流及恢复；`security.websocket_origin` 验证缺失/恶意 Origin 为 403、白名单 Origin 为 101；`security.authorization_matrix` 验证 owner/member/non-member/过期 token 的 200/200/403/401 结果，并覆盖 member/non-member 的 WebSocket subscribe。Gitleaks 8.24.2 扫描 20 个提交无泄露；Trivy 0.74.0 使用 `public.ecr.aws/aquasecurity/trivy-db:2` 扫描 `httpserver:m8-security`，HIGH/CRITICAL 为 0。M9 的 CI 将两项设为发布阻断并保存报告 artifact。

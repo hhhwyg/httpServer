@@ -240,6 +240,28 @@ void TestConcurrentMembershipUpdates() {
   assert(members.members.size() == 33);
 }
 
+void TestOutboxEventDeduplication() {
+  httpserver::ChatService& service = httpserver::ChatService::Instance();
+  service.ResetForTesting();
+  const auto created = service.CreateRoom("alice", "outbox");
+  assert(created.error == httpserver::ChatServiceError::kNone);
+  auto alice = std::make_shared<TestSession>(70, "alice");
+  auto bob = std::make_shared<TestSession>(71, "bob");
+  assert(service.AttachSession(created.room.id, alice) ==
+         httpserver::ChatServiceError::kNone);
+  assert(service.AttachSession(created.room.id, bob, true) ==
+         httpserver::ChatServiceError::kNone);
+  const std::string event =
+      "{\"eventId\":\"event-1\",\"eventType\":\"message.created\","
+      "\"messageId\":\"1\",\"roomId\":\"" + created.room.id +
+      "\",\"senderId\":\"alice\",\"clientMessageId\":\"client-1\","
+      "\"content\":\"deduplicated\",\"createdAt\":\"2026-01-01T00:00:00.000Z\"}";
+  assert(service.DeliverOutboxEvent(event));
+  assert(!service.DeliverOutboxEvent(event));
+  assert(alice->received().size() == 1);
+  assert(bob->received().size() == 1);
+}
+
 }  // namespace
 
 int main() {
@@ -249,6 +271,7 @@ int main() {
   TestMessageDispatchAndCursorHistory();
   TestConcurrentMembershipUpdates();
   TestConcurrentIdempotentMessageSubmission();
+  TestOutboxEventDeduplication();
   httpserver::ChatService::Instance().ResetForTesting();
   return 0;
 }

@@ -1,5 +1,7 @@
 # M6：可靠性、超时与背压
 
+> 完成状态：已完成（2026-09-06）。容量、deadline、慢消费者处理、信号排空和 Toxiproxy 故障验收均已实现。
+
 ## 目标
 
 确保慢客户端、突发流量、MySQL/Redis 变慢和关闭过程不会导致 EventLoop 阻塞、内存无界增长或请求永久悬挂。每项资源都有容量，每个外部调用都有截止时间，每种过载都有明确拒绝或断开策略。
@@ -66,3 +68,26 @@ ctest --preset asan -L "lifecycle|resilience" --output-on-failure
 - 依赖 deadline、重连、退避与降级策略
 - Toxiproxy 测试环境和三类故障测试
 - 更新后的 Operations 与 Runbook
+
+## 实施结果
+
+| 能力 | 实现与观测 |
+| --- | --- |
+| 输出背压 | `HTTPSERVER_OUTPUT_BUFFER_HIGH_WATER_BYTES`（256 KiB）和 `HTTPSERVER_OUTPUT_BUFFER_HARD_LIMIT_BYTES`（1 MiB）限制每连接待写字节。高水位丢弃非关键房间广播；硬上限关闭连接。`/metrics` 提供 high-water、dropped 和 slow-consumer 计数。 |
+| 依赖截止与拒绝 | 数据库执行器保持有界队列，任务在 3 秒排队 deadline 后回调稳定 `503`；MySQL 连接/读/写超时和 Redis 连接/命令超时分别配置。指标包含队列深度、拒绝和过期数。 |
+| 重连与重试 | Redis 重连采用指数退避加随机抖动；Outbox 重试仅针对未发布记录，并采用有限指数退避和 0-1 秒抖动。 |
+| 优雅退出 | `signalfd` 先停止监听，给 WebSocket 发 `1001`，在可配宽限期后依次 join Outbox、数据库执行器、Redis，并记录阶段日志。 |
+
+## 验收记录
+
+```bash
+cmake --build --preset debug --parallel
+ctest --test-dir build/debug -L 'resilience|lifecycle' --output-on-failure
+# 结果：resilience.slow_consumer、resilience.graceful_drain 通过
+
+docker compose -f docker-compose.chaos.yml up -d --build
+python3 tests/resilience/DependencyLatencyTest.py 18082 18474
+# 结果：dependency_latency_acceptance ping_max_ms=2 dependency_status=503
+```
+
+`SlowConsumerTest.py` 使用 64 KiB 硬上限和 96 KiB 静态响应，验证慢连接被关闭且其他 `/ping` 请求正常；`GracefulDrainTest.py` 验证 `SIGTERM` 后监听立即停止、WebSocket 收到 `1001`、进程在两秒测试宽限期内以零状态退出。Toxiproxy 配置仅用于测试，代理 MySQL 与 Redis，并允许通过 `18474` 管理端口注入 toxic。

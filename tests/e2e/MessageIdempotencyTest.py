@@ -16,6 +16,7 @@ sys.path.insert(0, str(INTEGRATION_DIR))
 
 from ChatBusinessFlowTest import (  # noqa: E402
     SECRET,
+    memory_only_environment,
     receive_json,
     register_and_login,
     request_json,
@@ -109,9 +110,7 @@ def main():
     log_file = tempfile.NamedTemporaryFile(prefix="httpserver-m2-idempotency-", delete=False)
     log_path = log_file.name
     log_file.close()
-    environment = os.environ.copy()
-    environment["HTTPSERVER_JWT_SECRET"] = SECRET
-    environment["HTTPSERVER_AUTH_STORE"] = "memory"
+    environment = memory_only_environment()
     process = subprocess.Popen(
         [server, "-b", "epoll", "-t", "2", "-p", str(port), "-l", log_path],
         env=environment,

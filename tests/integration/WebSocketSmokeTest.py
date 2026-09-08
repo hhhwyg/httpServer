@@ -15,6 +15,22 @@ SECRET = b"phase2-websocket-test-secret-change-me-123456"
 ISSUER = "httpServer"
 
 
+def isolated_websocket_environment():
+    environment = os.environ.copy()
+    for name in (
+        "HTTPSERVER_CONFIG_FILE",
+        "HTTPSERVER_DB_USER",
+        "HTTPSERVER_DB_PASSWORD",
+        "HTTPSERVER_DB_NAME",
+        "HTTPSERVER_REDIS_HOST",
+        "HTTPSERVER_REDIS_PASSWORD",
+    ):
+        environment.pop(name, None)
+    environment["HTTPSERVER_JWT_SECRET"] = SECRET.decode("ascii")
+    environment["HTTPSERVER_AUTH_STORE"] = "memory"
+    return environment
+
+
 def b64url(value):
     return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
 
@@ -22,7 +38,13 @@ def b64url(value):
 def make_token(username):
     header = {"alg": "HS256", "typ": "JWT"}
     now = int(time.time())
-    payload = {"sub": username, "iss": ISSUER, "iat": now, "exp": now + 300}
+    payload = {
+        "sub": username,
+        "iss": ISSUER,
+        "jti": b64url(f"websocket-test-jti-{username}".encode("ascii")),
+        "iat": now,
+        "exp": now + 300,
+    }
     encoded_header = b64url(json.dumps(header, separators=(",", ":")).encode())
     encoded_payload = b64url(json.dumps(payload, separators=(",", ":")).encode())
     signing_input = f"{encoded_header}.{encoded_payload}".encode("ascii")
@@ -195,8 +217,7 @@ def main():
     log_file = tempfile.NamedTemporaryFile(prefix="httpserver-ws-", delete=False)
     log_path = log_file.name
     log_file.close()
-    environment = os.environ.copy()
-    environment["HTTPSERVER_JWT_SECRET"] = SECRET.decode("ascii")
+    environment = isolated_websocket_environment()
     process = subprocess.Popen(
         [server, "-b", "epoll", "-t", "1", "-p", str(port), "-l", log_path],
         env=environment,

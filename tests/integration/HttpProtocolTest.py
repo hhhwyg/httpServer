@@ -152,8 +152,20 @@ def main():
     log_file = tempfile.NamedTemporaryFile(prefix="httpserver-http-", delete=False)
     log_path = log_file.name
     log_file.close()
+    environment = os.environ.copy()
+    for name in (
+        "HTTPSERVER_CONFIG_FILE",
+        "HTTPSERVER_JWT_SECRET",
+        "HTTPSERVER_DB_USER",
+        "HTTPSERVER_DB_PASSWORD",
+        "HTTPSERVER_DB_NAME",
+        "HTTPSERVER_REDIS_HOST",
+        "HTTPSERVER_REDIS_PASSWORD",
+    ):
+        environment.pop(name, None)
     process = subprocess.Popen(
         [server, "-b", "epoll", "-t", "1", "-p", str(port), "-l", log_path],
+        env=environment,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )

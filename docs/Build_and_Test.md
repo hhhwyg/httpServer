@@ -11,7 +11,7 @@
 ```bash
 sudo apt update
 sudo apt install -y build-essential cmake ninja-build \
-  liburing-dev libssl-dev default-libmysqlclient-dev
+  liburing-dev libssl-dev default-libmysqlclient-dev libhiredis-dev
 ```
 
 ## CMake 预设
@@ -100,6 +100,16 @@ HTTPSERVER_VALIDATE_DATABASE=1 scripts/validate_linux.sh debug
 ```
 
 最后一条会额外启动 Docker Compose 的 MySQL 集成测试。
+
+故障和性能场景不在普通 CTest 中隐式执行：
+
+```bash
+tests/resilience/run_fault_matrix.sh build/debug
+HTTPSERVER_BENCH_JWT_SECRET="$HTTPSERVER_JWT_SECRET" \
+  tests/benchmark/run_websocket_benchmark.sh deploy/benchmark/scenario-single-instance.env
+HTTPSERVER_ALLOW_LONG_SOAK=1 HTTPSERVER_BENCH_JWT_SECRET="$HTTPSERVER_JWT_SECRET" \
+  tests/benchmark/run_soak_test.sh deploy/benchmark/scenario-soak-24h.env
+```
 
 ## 失败排查
 

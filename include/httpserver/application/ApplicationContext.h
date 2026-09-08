@@ -19,6 +19,7 @@ struct ApplicationRequest {
   // Direct peer address captured by the transport. Do not derive this from
   // untrusted forwarding headers.
   std::string remoteAddress;
+  std::string requestId;
 };
 
 using ResponseSender =

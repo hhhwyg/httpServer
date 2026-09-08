@@ -1,5 +1,7 @@
 # M9：公网部署与 CI/CD
 
+> 完成状态：本地交付物与隔离演练已完成；真实域名 HTTPS/WSS、空白云主机部署、失败发布回滚和公网 24 小时运行尚待外部环境验收，因此 M9 尚未最终关闭。
+
 ## 目标
 
 在一台 Linux 云服务器上通过真实域名提供 HTTPS/WSS 服务，同时运行两个应用实例验证水平扩展路径。部署必须可重复、可备份、可回滚，不以手工复制二进制作为最终流程。
@@ -69,3 +71,13 @@ scripts/test_backup_restore.sh
 - CI、镜像发布、部署与回滚工作流
 - 数据库备份恢复脚本
 - 公网 smoke test 与部署 Runbook
+
+## 实施结果与验收
+
+`docker-compose.production.yml` 提供 `webserver-a`、`webserver-b`、MySQL、Redis、Nginx、Prometheus、Grafana、Alertmanager 与 node exporter。两个应用分别使用独立 `instanceId` 和 Outbox publisher ID，只 `expose` 内网 8088；主机仅映射 Nginx 80/443。Nginx upstream 使用两个实例，TLS、WSS Upgrade、入口 Origin/速率限制、临时文件系统和 worker 降权均在容器内实际启动验证。
+
+`.github/workflows/ci.yml` 将 Debug/ASan、secret scan、Trivy release image scan 和 Compose 渲染拆成阻断 job；`release.yml` 对 tag/手动发布推送 GHCR commit SHA 与版本 tag；`deploy.yml` 仅能在受保护的 production environment 下使用服务器 secret。`scripts/deploy_release.sh` 强制 SHA tag，并执行 MySQL 备份、排序迁移、双实例 readiness、Nginx 校验、可选公网 smoke 和旧应用镜像恢复。
+
+本地隔离演练以 `httpserver:m8-security`、自签 TLS 证书和独立 Compose 项目运行：两个应用实例与 MySQL/Redis 均进入 healthy，`curl -k https://127.0.0.1/healthz` 返回 `ok`、`/readyz` 返回 `ready`；停止 `webserver-a` 后新 HTTPS 请求仍返回 `ok`，恢复后两个实例再次 healthy。演练产生的容器、网络、卷和临时证书均已清理。
+
+`tests/e2e/PublicWssSmokeTest.py` 使用系统信任链校验证书，经公网入口完成两个临时账号的注册登录、建房和加入，并验证 WSS 订阅、持久化 ACK、跨连接 `message.created` 以及 ping/pong。`--insecure` 仅允许本地自签证书演练，不能作为公网验收证据。

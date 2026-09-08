@@ -49,4 +49,13 @@ class MessageRepository {
                                          std::size_t limit) const = 0;
 };
 
+class ChatRepository : public RoomRepository,
+                       public MembershipRepository,
+                       public MessageRepository {
+ public:
+  ~ChatRepository() override = default;
+
+  virtual bool available() const = 0;
+};
+
 }  // namespace httpserver

@@ -23,6 +23,25 @@ from WebSocketSmokeTest import (  # noqa: E402
 SECRET = "m1-business-flow-secret-at-least-32-bytes"
 
 
+def memory_only_environment():
+    environment = os.environ.copy()
+    # These E2E tests exercise the in-memory M1/M2 boundary.  Explicitly
+    # remove inherited dependency settings so a developer's shell or CI job
+    # cannot silently switch only part of the application to MySQL/Redis.
+    for name in (
+        "HTTPSERVER_CONFIG_FILE",
+        "HTTPSERVER_DB_USER",
+        "HTTPSERVER_DB_PASSWORD",
+        "HTTPSERVER_DB_NAME",
+        "HTTPSERVER_REDIS_HOST",
+        "HTTPSERVER_REDIS_PASSWORD",
+    ):
+        environment.pop(name, None)
+    environment["HTTPSERVER_JWT_SECRET"] = SECRET
+    environment["HTTPSERVER_AUTH_STORE"] = "memory"
+    return environment
+
+
 def request_json(port, method, path, token="", body=None):
     encoded = b"" if body is None else json.dumps(
         body, separators=(",", ":")
@@ -245,9 +264,7 @@ def main():
     log_file = tempfile.NamedTemporaryFile(prefix="httpserver-m1-", delete=False)
     log_path = log_file.name
     log_file.close()
-    environment = os.environ.copy()
-    environment["HTTPSERVER_JWT_SECRET"] = SECRET
-    environment["HTTPSERVER_AUTH_STORE"] = "memory"
+    environment = memory_only_environment()
     process = subprocess.Popen(
         [server, "-b", "epoll", "-t", "2", "-p", str(port), "-l", log_path],
         env=environment,

@@ -1,0 +1,7 @@
+title = "httpServer gitleaks policy"
+
+[allowlist]
+  description = "Test fixtures contain deliberately non-secret JWT and database placeholders."
+  paths = [
+    '''^tests/''',
+  ]

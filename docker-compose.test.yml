@@ -1,0 +1,34 @@
+name: httpserver-m3-test
+
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: test-root-password
+      MYSQL_DATABASE: webserver
+      MYSQL_USER: httpserver
+      MYSQL_PASSWORD: test-database-password
+    ports:
+      - "33306:3306"
+    volumes:
+      - mysql-test-data:/var/lib/mysql
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7.4-alpine
+    ports:
+      - "36379:6379"
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  mysql-test-data:

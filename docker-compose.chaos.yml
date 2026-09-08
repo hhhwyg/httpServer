@@ -1,0 +1,71 @@
+name: httpserver-chaos
+
+services:
+  webserver:
+    build:
+      context: .
+      dockerfile: Dockerfile.deploy
+      target: build
+    command: ["/source/build/release/WebServer", "-b", "epoll", "-t", "2", "-p", "8088", "-l", "/tmp/httpserver.log"]
+    environment:
+      HTTPSERVER_JWT_SECRET: chaos-test-jwt-secret-change-me-1234567890
+      HTTPSERVER_DB_HOST: toxiproxy
+      HTTPSERVER_DB_PORT: 3306
+      HTTPSERVER_DB_USER: httpserver
+      HTTPSERVER_DB_PASSWORD: chaos-database-password
+      HTTPSERVER_DB_NAME: webserver
+      HTTPSERVER_DB_OPERATION_TIMEOUT_SECONDS: 1
+      HTTPSERVER_REDIS_HOST: toxiproxy
+      HTTPSERVER_REDIS_PORT: 6379
+      HTTPSERVER_REDIS_CONNECT_TIMEOUT_MS: 200
+      HTTPSERVER_REDIS_COMMAND_TIMEOUT_MS: 200
+      HTTPSERVER_INSTANCE_ID: chaos-instance
+      HTTPSERVER_OUTBOX_PUBLISHER_ID: chaos-instance
+      HTTPSERVER_GRACEFUL_SHUTDOWN_SECONDS: 2
+    ports: ["18082:8088"]
+    restart: on-failure:5
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8088/readyz"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+      start_period: 5s
+    depends_on:
+      mysql: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      toxiproxy: {condition: service_started}
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: chaos-root-password
+      MYSQL_DATABASE: webserver
+      MYSQL_USER: httpserver
+      MYSQL_PASSWORD: chaos-database-password
+    volumes:
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
+      - chaos-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.12.0
+    command: ["-host", "0.0.0.0", "-config", "/config/toxiproxy.json"]
+    ports: ["18474:8474"]
+    volumes:
+      - ./tests/resilience/toxiproxy.json:/config/toxiproxy.json:ro
+
+volumes:
+  chaos-mysql-data:

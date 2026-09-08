@@ -4,8 +4,10 @@
 #include <cctype>
 #include <cstdint>
 #include <functional>
+#include <mutex>
 #include <netinet/in.h>
 #include <string_view>
+#include <vector>
 #include <sys/socket.h>
 #include "HttpData.h"
 #include "httpserver/transport/EventLoop.h"
@@ -16,7 +18,10 @@
 #include "httpserver/application/AuthenticationRateLimiter.h"
 #include "httpserver/application/ApplicationRouter.h"
 #include "httpserver/application/ChatApplication.h"
+#include "httpserver/application/DatabaseExecutor.h"
 #include "httpserver/application/Metrics.h"
+#include "httpserver/application/StructuredLog.h"
+#include "httpserver/application/RedisClient.h"
 #include "httpserver/protocol/HttpRequest.h"
 #include "httpserver/protocol/HttpResponse.h"
 #include "httpserver/protocol/WebSocket.h"
@@ -47,6 +52,14 @@ constexpr char kPingCloseResponse[] =
 namespace {
 
 std::atomic<std::uint64_t> nextSessionId{1};
+std::atomic<std::uint64_t> nextRequestId{1};
+std::atomic<std::size_t> outputHighWaterBytes{256 * 1024};
+std::atomic<std::size_t> outputHardLimitBytes{1024 * 1024};
+std::mutex liveConnectionsMutex;
+std::vector<std::weak_ptr<HttpData>> liveConnections;
+std::mutex webSocketOriginsMutex;
+std::vector<std::string> webSocketAllowedOrigins;
+bool webSocketOriginRequired = false;
 
 std::string toLower(std::string value) {
   std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
@@ -104,6 +117,15 @@ std::string peerAddressFor(int fd) {
                : std::string(text);
   }
   return {};
+}
+
+bool isAllowedWebSocketOrigin(const httpserver::HeaderMap& headers) {
+  std::lock_guard<std::mutex> lock(webSocketOriginsMutex);
+  if (!webSocketOriginRequired) return true;
+  const auto origin = headers.find("origin");
+  if (origin == headers.end()) return false;
+  return std::find(webSocketAllowedOrigins.begin(), webSocketAllowedOrigins.end(),
+                   origin->second) != webSocketAllowedOrigins.end();
 }
 
 }  // namespace
@@ -173,24 +195,118 @@ char favicon[555] = {
     'v',    '\x98', 'I',    '\x0',  '\x0',  '\x0',  '\x0',  'I',    'E',
     'N',    'D',    '\xAE', 'B',    '\x60', '\x82',
 };
-void HttpData::sendResponse(int status, const std::string& type, const std::string& body) {
-    httpserver::Metrics::ResponseSent(status);
-    outBuffer_.append(httpserver::HttpResponseWriter::SerializeHead(
-        status, type, body.size(), keepAlive_));
-    if (method_ != METHOD_HEAD) {
-      outBuffer_.append(body);
+void HttpData::ConfigureOutputBufferLimits(std::size_t highWaterBytes,
+                                           std::size_t hardLimitBytes) {
+  outputHighWaterBytes.store(highWaterBytes, std::memory_order_release);
+  outputHardLimitBytes.store(hardLimitBytes, std::memory_order_release);
+}
+
+void HttpData::ConfigureWebSocketOrigins(std::vector<std::string> origins,
+                                         bool requireOrigin) {
+  std::lock_guard<std::mutex> lock(webSocketOriginsMutex);
+  webSocketAllowedOrigins = std::move(origins);
+  webSocketOriginRequired = requireOrigin;
+}
+
+void HttpData::BeginGracefulShutdown() {
+  std::vector<std::shared_ptr<HttpData>> connections;
+  {
+    std::lock_guard<std::mutex> lock(liveConnectionsMutex);
+    auto output = liveConnections.begin();
+    for (auto input = liveConnections.begin(); input != liveConnections.end(); ++input) {
+      if (auto connection = input->lock()) {
+        connections.push_back(std::move(connection));
+        *output++ = *input;
+      }
     }
-    submitAsyncWrite();
+    liveConnections.erase(output, liveConnections.end());
+  }
+  for (const auto& connection : connections) {
+    if (!connection->loop_) continue;
+    connection->loop_->queueInLoop([connection] {
+      if (connection->closed_ || connection->connectionState_ == H_DISCONNECTED) return;
+      connection->draining_ = true;
+      if (connection->state_ == STATE_WEBSOCKET) {
+        connection->closeWebSocket(1001, "server shutdown");
+      } else {
+        connection->closeAfterWrite_ = true;
+        connection->connectionState_ = H_DISCONNECTING;
+        if (connection->outBuffer_.empty()) connection->handleClose();
+      }
+    });
+  }
+}
+
+bool HttpData::appendOutput(std::string_view output, bool nonCritical) {
+  if (closed_ || connectionState_ == H_DISCONNECTED) return false;
+  const std::size_t current = static_cast<std::size_t>(outBuffer_.readableBytes());
+  const std::size_t hardLimit = outputHardLimitBytes.load(std::memory_order_acquire);
+  const std::size_t highWater = outputHighWaterBytes.load(std::memory_order_acquire);
+  if (output.size() > hardLimit || current > hardLimit - output.size()) {
+    httpserver::Metrics::SlowConsumerClosed();
+    outBuffer_.clear();
+    handleClose();
+    return false;
+  }
+  if (current >= highWater || current + output.size() > highWater) {
+    httpserver::Metrics::OutputBufferHighWater();
+    if (nonCritical) {
+      httpserver::Metrics::OutputMessageDropped();
+      return false;
+    }
+  }
+  outBuffer_.append(output.data(), static_cast<int>(output.size()));
+  return true;
+}
+
+void HttpData::recordHttpResponse(int status) {
+  std::uint64_t durationMicroseconds = 0;
+  if (requestTimingActive_) {
+    durationMicroseconds = static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - requestStartedAt_)
+            .count());
+    requestTimingActive_ = false;
+  }
+  const char* method = method_ == METHOD_GET ? "GET" :
+      method_ == METHOD_POST ? "POST" : method_ == METHOD_DELETE ? "DELETE" :
+      method_ == METHOD_HEAD ? "HEAD" : "OTHER";
+  httpserver::Metrics::HttpRequestCompleted(method, path_, status,
+                                             durationMicroseconds);
+  httpserver::LogStructuredEvent({requestId_, std::to_string(sessionId_), {}, {},
+                                  "http.request", status >= 500 ? "internal_error" : "",
+                                  durationMicroseconds / 1000});
+}
+
+void HttpData::initializeRequestId() {
+  const auto supplied = headers_.find("x-request-id");
+  if (supplied != headers_.end() && supplied->second.size() <= 64 &&
+      !supplied->second.empty() &&
+      std::all_of(supplied->second.begin(), supplied->second.end(), [](unsigned char value) {
+        return std::isalnum(value) || value == '-' || value == '_';
+      })) {
+    requestId_ = supplied->second;
+    return;
+  }
+  requestId_ = "http-" + std::to_string(sessionId_) + '-' +
+      std::to_string(nextRequestId.fetch_add(1, std::memory_order_relaxed));
+}
+
+void HttpData::sendResponse(int status, const std::string& type, const std::string& body) {
+    recordHttpResponse(status);
+    std::string response = httpserver::HttpResponseWriter::SerializeHead(
+        status, type, body.size(), keepAlive_);
+    if (method_ != METHOD_HEAD) {
+      response.append(body);
+    }
+    if (appendOutput(response, false)) submitAsyncWrite();
 }
 
 void HttpData::handleWriteInLoop(const std::string& msg) {
     if (error_ || connectionState_ == H_DISCONNECTED) return;
 
     // 统一追加到缓冲区末尾
-    outBuffer_.append(msg); 
-
-    // 尝试立即发送
-    submitAsyncWrite();
+    if (appendOutput(msg, false)) submitAsyncWrite();
 }
 
 void HttpData::completeApplicationResponse(int status, std::string type,
@@ -211,6 +327,15 @@ void HttpData::sendMsg(const std::string& msg) {
         self->handleWriteInLoop(
             httpserver::WebSocketCodec::EncodeFrame(0x1, msg));
     });
+}
+
+void HttpData::sendNonCriticalMessage(std::string msg) {
+  auto self = shared_from_this();
+  loop_->runInLoop([self, msg = std::move(msg)] {
+    if (self->error_ || self->connectionState_ == H_DISCONNECTED) return;
+    const std::string frame = httpserver::WebSocketCodec::EncodeFrame(0x1, msg);
+    if (self->appendOutput(frame, true)) self->submitAsyncWrite();
+  });
 }
 
 void HttpData::closeWebSocket(std::uint16_t code, const std::string& reason) {
@@ -278,6 +403,10 @@ void HttpData::init() {
       self->handleConn();
     }
   });
+  {
+    std::lock_guard<std::mutex> lock(liveConnectionsMutex);
+    liveConnections.push_back(shared_from_this());
+  }
   channel_->setAsyncReadHandler([weakSelf](int bytesRead) {
     if (const auto self = weakSelf.lock()) {
       self->handleReadComplete(bytesRead);
@@ -792,8 +921,14 @@ AnalysisState HttpData::handleWebSocketHandshake() {
         return ANALYSIS_ERROR;
     }
 
-    // 3. JWT 鉴权（从 URL query 中取 token）
-    const auto username = httpserver::Authenticator::VerifyQuery(query_);
+    if (!isAllowedWebSocketOrigin(headers_)) {
+        handleError(fd_, 403, "WebSocket origin denied");
+        return ANALYSIS_ERROR;
+    }
+
+    // 3. JWT authentication. Authorization is preferred; query support is
+    // retained for old clients and must be disabled at the public proxy.
+    const auto username = httpserver::Authenticator::VerifyRequest(query_, headers_);
     if (!username.has_value()) {
         handleError(fd_, 401, "Unauthorized");
         return ANALYSIS_ERROR;
@@ -808,6 +943,10 @@ AnalysisState HttpData::handleWebSocketHandshake() {
     }
 
     authenticatedUser_ = *username;
+    const std::string presenceUser = authenticatedUser_;
+    httpserver::DatabaseExecutor::Submit([presenceUser] {
+      httpserver::RedisService::TrackPresence(presenceUser);
+    });
 
     // 5. 计算 Accept Key
     const std::string clientKey = headers_["sec-websocket-key"];
@@ -821,7 +960,9 @@ AnalysisState HttpData::handleWebSocketHandshake() {
     header += "Sec-WebSocket-Accept: " + acceptKey + "\r\n";
     header += "\r\n";
 
-    outBuffer_.append(header);
+    recordHttpResponse(101);
+    httpserver::Metrics::WebSocketConnectionOpened();
+    if (!appendOutput(header, false)) return ANALYSIS_ERROR;
 
     // 7. 切换状态机
     state_ = STATE_WEBSOCKET;
@@ -834,7 +975,10 @@ AnalysisState HttpData::handleWebSocketHandshake() {
 }
 
 AnalysisState HttpData::analysisRequest() {
+    initializeRequestId();
     httpserver::Metrics::RequestStarted();
+    requestStartedAt_ = std::chrono::steady_clock::now();
+    requestTimingActive_ = true;
     if (method_ == METHOD_GET && uri_ == "/ws") {
         return handleWebSocketHandshake();
     }
@@ -844,13 +988,15 @@ AnalysisState HttpData::analysisRequest() {
     // benchmark measures socket and HTTP state-machine work rather than
     // avoidable allocations and queueing.
     if (method_ == METHOD_GET && uri_ == "/ping") {
-        httpserver::Metrics::ResponseSent(200);
+        recordHttpResponse(200);
         const char* response = keepAlive_ ? kPingKeepAliveResponse
                                           : kPingCloseResponse;
         const std::size_t responseLength =
             keepAlive_ ? sizeof(kPingKeepAliveResponse) - 1
                        : sizeof(kPingCloseResponse) - 1;
-        outBuffer_.append(response, static_cast<int>(responseLength));
+        if (!appendOutput(std::string_view(response, responseLength), false)) {
+          return ANALYSIS_ERROR;
+        }
         return ANALYSIS_SUCCESS;
     }
 
@@ -876,7 +1022,7 @@ AnalysisState HttpData::analysisRequest() {
     const std::string requestBody =
         method_ == METHOD_POST ? bufferedBody.substr(0, contentLength_) : "";
     const httpserver::ApplicationRequest request{
-        std::string(method), uri_, query_, headers_, requestBody, peerAddress_};
+        std::string(method), uri_, query_, headers_, requestBody, peerAddress_, requestId_};
     const std::weak_ptr<HttpData> weakSelf = shared_from_this();
     const httpserver::ResponseSender sendResponse =
         [weakSelf, loop = loop_](int status, std::string_view type,
@@ -919,10 +1065,11 @@ AnalysisState HttpData::handleStaticFile() {
     return ANALYSIS_SUCCESS;
   }
 
-  outBuffer_.append(httpserver::HttpResponseWriter::SerializeHead(
-      200, file.contentType, file.contentLength, keepAlive_));
-  if (method_ == METHOD_GET) outBuffer_.append(file.body);
-  submitAsyncWrite();
+  recordHttpResponse(200);
+  std::string response = httpserver::HttpResponseWriter::SerializeHead(
+      200, file.contentType, file.contentLength, keepAlive_);
+  if (method_ == METHOD_GET) response.append(file.body);
+  if (appendOutput(response, false)) submitAsyncWrite();
   return ANALYSIS_SUCCESS;
 }
 
@@ -931,22 +1078,23 @@ void HttpData::handleError(int fd, int err_num, std::string short_msg) {
   const std::string body =
       "<html><title>Error</title><body>" + std::to_string(err_num) + " " +
       short_msg + "<hr><em>Chengyu Collaboration Server</em>\n</body></html>";
-  httpserver::Metrics::ResponseSent(err_num);
-  outBuffer_.append(httpserver::HttpResponseWriter::SerializeHead(
-      err_num, "text/html", body.size(), false));
+  recordHttpResponse(err_num);
+  std::string response = httpserver::HttpResponseWriter::SerializeHead(
+      err_num, "text/html", body.size(), false);
   if (method_ != METHOD_HEAD) {
-    outBuffer_.append(body);
+    response.append(body);
   }
 
   // Keep the connection alive until the asynchronous write completion drains
   // the response. This also preserves partial-write handling for errors.
   closeAfterWrite_ = true;
-  submitAsyncWrite();
+  if (appendOutput(response, false)) submitAsyncWrite();
 }
 
 void HttpData::handleClose() {
   if (closed_) return;
   closed_ = true;
+  if (state_ == STATE_WEBSOCKET) httpserver::Metrics::WebSocketConnectionClosed();
   httpserver::Metrics::ConnectionClosed();
   connectionState_ = H_DISCONNECTED;
 
@@ -962,6 +1110,12 @@ void HttpData::handleClose() {
   }
   separateTimer();
   httpserver::ChatApplication::Leave(sessionId_);
+  if (!authenticatedUser_.empty()) {
+    const std::string presenceUser = authenticatedUser_;
+    httpserver::DatabaseExecutor::Submit([presenceUser] {
+      httpserver::RedisService::UntrackPresence(presenceUser);
+    });
+  }
   if (fd_ >= 0) {
     close(fd_);
     fd_ = -1;
@@ -1011,7 +1165,7 @@ void HttpData::submitAsyncWrite() {
 void HttpData::handleReadComplete(int bytes_read) {
     if (closed_ || connectionState_ == H_DISCONNECTED) return;
     isReading_ = false;
-    if (requestInFlight_) return;
+    if (requestInFlight_ || draining_) return;
     if (connectionState_ == H_DISCONNECTING) {
         inBuffer_.clear();
         return;

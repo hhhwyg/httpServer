@@ -2,7 +2,7 @@
 
 ## 当前边界
 
-本项目仍是学习型服务器，尚未完成 TLS 终止、HTTP chunked 编码支持、代理后的真实客户端 IP 识别及完整生产安全评审。以下措施只降低已识别的认证和数据访问风险，不能替代生产安全评审。
+本项目的公开部署使用 Nginx 终止 TLS，应用、MySQL 和 Redis 不对宿主机发布端口。完整边界、资产和残余风险见 [Threat Model](Threat_Model.md)。应用仍不信任客户端伪造的转发地址；公网 IP 限流由 Nginx 负责，应用仅使用 socket 对端地址作为补充。
 
 ## 凭据与配置
 
@@ -24,13 +24,13 @@ scrypt$v1$32768$8$1$<base64url-salt>$<base64url-derived-key>
 
 ## JWT
 
-JWT 固定使用 HS256，payload 包含 `sub`、`iss`、`iat` 和 `exp`。验证时检查：三段结构、Base64URL 字符集、签名、算法、issuer、签发时间和过期时间。签名比较使用 `CRYPTO_memcmp`。
+JWT 固定使用 HS256，payload 包含 `sub`、`jti`、`iss`、`iat` 和 `exp`。验证时检查：三段结构、Base64URL 字符集、签名、算法、issuer、签发时间、过期时间、最大长度和 `jti` 格式。签名比较使用 `CRYPTO_memcmp`。`POST /logout` 把 `jti` 按剩余有效期写入 Redis denylist；Redis 已配置但 denylist 无法读取时，受保护请求 fail-closed。
 
-WebSocket 只接受 `verifyAndExtractUsername()` 成功的 token，避免出现“先解码用户名、后遗漏验证”的调用路径。token 仍通过 WebSocket URL query 传递，可能被访问日志或代理记录；Phase 5 部署时应改为受 TLS 保护且不写入日志的认证传递方式。
+WebSocket 只接受完整 token 校验成功的主体，避免出现“先解码用户名、后遗漏验证”的调用路径。公网 Nginx 仅接受 `Authorization: Bearer`，拒绝 URL query token，并在 Nginx 和应用中校验 `HTTPSERVER_WS_ALLOWED_ORIGINS` 的 HTTPS Origin 白名单。直接本地开发为了兼容测试客户端可不配置白名单，不得作为公网配置。
 
 ## 认证限流
 
-登录按用户名和 TCP 对端 IP、WebSocket 握手按已验证 JWT 主体和 TCP 对端 IP 执行独立的滑动窗口限流。默认每个维度 60 秒内最多 10 次；`HTTPSERVER_AUTH_MAX_ATTEMPTS` 和 `HTTPSERVER_AUTH_WINDOW_SECONDS` 可调整。该地址来自 socket，不信任客户端可伪造的转发头；部署在反向代理之后时，代理仍须在边界处实施真实客户端 IP 限流。
+登录、注册、建房、发消息按主体或 IP 执行 Redis Lua 窗口限流；WebSocket 握手保留本地主体/IP 限流并叠加 Nginx 入口限流。默认认证维度 60 秒内最多 10 次；`HTTPSERVER_AUTH_MAX_ATTEMPTS` 和 `HTTPSERVER_AUTH_WINDOW_SECONDS` 可调整。该地址来自 socket，不信任客户端可伪造的转发头；部署在反向代理之后由 Nginx 对真实公网连接限流。
 
 ## 数据库
 

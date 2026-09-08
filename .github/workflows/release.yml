@@ -1,0 +1,30 @@
+name: release-image
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build immutable image
+        env:
+          IMAGE_REPOSITORY: ghcr.io/${{ github.repository }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          image="${IMAGE_REPOSITORY,,}"
+          docker build -f Dockerfile.deploy -t "${image}:${IMAGE_TAG}" -t "${image}:${GITHUB_REF_NAME}" .
+          docker push "${image}:${IMAGE_TAG}"
+          docker push "${image}:${GITHUB_REF_NAME}"

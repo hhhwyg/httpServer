@@ -1,0 +1,51 @@
+groups:
+  - name: httpserver
+    rules:
+      - alert: HttpServerUnavailable
+        expr: up{job="httpserver"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: httpServer instance is unavailable
+          runbook: docs/Runbook.md#readyz-返回-503
+      - alert: HttpServerHigh5xxRate
+        expr: sum(rate(httpserver_http_requests_total{status_class="5xx"}[5m])) / clamp_min(sum(rate(httpserver_http_requests_total[5m])), 1) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: HTTP 5xx ratio is above 5 percent
+          runbook: docs/Runbook.md#依赖超时或队列拒绝
+      - alert: HttpServerSlowConsumers
+        expr: increase(httpserver_slow_consumer_closed_total[5m]) > 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Slow consumer disconnects are increasing
+          runbook: docs/Runbook.md#连接洪泛或慢客户端
+      - alert: HttpServerDatabaseQueueSaturated
+        expr: httpserver_database_executor_queue_depth > 200
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Database executor queue is near capacity
+          runbook: docs/Runbook.md#依赖超时或队列拒绝
+      - alert: HttpServerOutboxBacklog
+        expr: httpserver_outbox_oldest_age_seconds > 60
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: Outbox has unpublished events older than one minute
+          runbook: docs/Runbook.md#依赖超时或队列拒绝
+      - alert: HttpServerRedisErrors
+        expr: increase(httpserver_redis_errors_total[5m]) > 10
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: Redis command errors are increasing
+          runbook: docs/Runbook.md#依赖超时或队列拒绝

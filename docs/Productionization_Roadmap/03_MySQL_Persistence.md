@@ -1,5 +1,41 @@
 # M3：MySQL 持久化
 
+## 完成状态
+
+已完成。实现使用 MySQL 8.4、InnoDB 与 `utf8mb4`，并在隔离 Compose
+数据库上验证了重启恢复、并发幂等、事务回滚、重复迁移和备份恢复。
+
+关键实现位置：
+
+- `db/migrations/001_initial.sql` 定义版本化 schema、外键、唯一键和查询索引；
+  `scripts/apply_migrations.sh` 仅供部署任务执行，应用进程只校验版本。
+- `src/sql/MySqlChatRepository.cpp` 提供房间、成员和消息仓储。发送消息将成员
+  校验、消息写入和包含完整消息载荷的 Outbox 事件置于同一 RAII 事务中。
+- `src/application/DatabaseExecutor.cpp` 提供可配置工作线程、有限队列、饱和拒绝、
+  队列/运行/拒绝统计及 drain shutdown。所有 REST 房间操作和 WebSocket 命令均经该
+  执行器运行。
+- MySQL 连接池在工作线程中按 `HTTPSERVER_DB_OPERATION_TIMEOUT_SECONDS` 有界等待，
+  并为连接、读取和写入配置超时。`/readyz` 的 schema 探针异步刷新缓存；`/metrics`
+  读取缓存计数，不执行同步 SQL。
+
+复现数据库验收：
+
+```bash
+docker compose -f docker-compose.test.yml up -d mysql
+cmake --preset debug -DHTTPSERVER_BUILD_DATABASE_INTEGRATION_TESTS=ON
+cmake --build --preset debug --parallel
+HTTPSERVER_JWT_SECRET=m3-persistence-secret-at-least-32-bytes \
+HTTPSERVER_DB_HOST=127.0.0.1 HTTPSERVER_DB_PORT=33306 \
+HTTPSERVER_DB_USER=httpserver HTTPSERVER_DB_PASSWORD=test-database-password \
+HTTPSERVER_DB_NAME=webserver \
+ctest --test-dir build/debug -L database --output-on-failure
+scripts/test_backup_restore.sh
+```
+
+数据库标签测试覆盖认证、进程重启后房间/成员/消息恢复、故意失败的 Outbox 写入
+回滚，以及两个并发连接使用同一幂等键时仅保留一条消息。备份脚本在专用临时库中
+重复执行迁移后实际 dump/restore，并比对六类关键行数。
+
 ## 目标
 
 让用户、房间、成员、消息和待发布事件在进程重启后仍可恢复，并将 SQL、事务和连接管理限制在 infrastructure 层。所有数据库工作继续通过有界执行器运行，不得阻塞 EventLoop。

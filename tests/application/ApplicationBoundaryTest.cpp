@@ -9,7 +9,7 @@ namespace {
 
 void testUnknownRouteFallsThrough() {
   const httpserver::ApplicationRequest request{
-      "GET", "/not-a-route", "", {}, "", "127.0.0.1"};
+      "GET", "/not-a-route", "", {}, "", "127.0.0.1", ""};
   const auto result =
       httpserver::ApplicationRouter::Dispatch(request, {});
   assert(result == httpserver::RouteResult::kNotHandled);
@@ -27,7 +27,7 @@ void testInvalidChatMessageProducesStableError() {
 
 void testV1RoomRouteRequiresAuthentication() {
   const httpserver::ApplicationRequest request{
-      "GET", "/api/v1/rooms", "", {}, "", "127.0.0.1"};
+      "GET", "/api/v1/rooms", "", {}, "", "127.0.0.1", ""};
   int status = 0;
   std::string response;
   const auto result = httpserver::ApplicationRouter::Dispatch(

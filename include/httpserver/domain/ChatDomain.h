@@ -40,11 +40,6 @@ enum class MessageDeliveryStage {
   kDelivered,
 };
 
-struct MessageAppendResult {
-  Message message;
-  bool inserted = false;
-};
-
 struct RoomSummary {
   std::string id;
   std::string name;
@@ -61,6 +56,13 @@ enum class ChatServiceError {
   kNotMember,
   kOwnerCannotLeave,
   kInvalidCursor,
+  kDependencyUnavailable,
+};
+
+struct MessageAppendResult {
+  ChatServiceError error = ChatServiceError::kNone;
+  Message message;
+  bool inserted = false;
 };
 
 struct CreateRoomResult {

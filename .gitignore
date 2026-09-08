@@ -33,6 +33,7 @@
 /config/local.*
 *.pem
 *.key
+/deploy/nginx/tls/
 
 # IDE and operating system files
 /.vscode/

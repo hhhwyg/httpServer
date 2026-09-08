@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <string>
 
@@ -7,10 +8,17 @@
 
 namespace CryptoUtil {
 
+struct JwtClaims {
+  std::string username;
+  std::string jti;
+  std::int64_t expiresAt = 0;
+};
+
 void configureJwt(httpserver::JwtConfig config);
 bool jwtEnabled();
 std::string generateJWT(const std::string& username);
 bool verifyJWT(const std::string& token);
+std::optional<JwtClaims> verifyAndExtractClaims(const std::string& token);
 std::optional<std::string> verifyAndExtractUsername(const std::string& token);
 std::string base64UrlEncode(const std::string& input);
 std::string base64UrlDecode(const std::string& input);

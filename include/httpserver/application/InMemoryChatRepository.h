@@ -6,9 +6,7 @@
 
 namespace httpserver {
 
-class InMemoryChatRepository final : public RoomRepository,
-                                     public MembershipRepository,
-                                     public MessageRepository {
+class InMemoryChatRepository final : public ChatRepository {
  public:
   InMemoryChatRepository();
   ~InMemoryChatRepository() override;
@@ -35,6 +33,8 @@ class InMemoryChatRepository final : public RoomRepository,
   std::vector<Message> ListAfter(std::string_view roomId,
                                  std::uint64_t afterId,
                                  std::size_t limit) const override;
+
+  bool available() const override { return true; }
 
   void Reset();
 

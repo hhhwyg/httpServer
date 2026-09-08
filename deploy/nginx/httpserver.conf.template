@@ -1,0 +1,96 @@
+limit_req_zone $binary_remote_addr zone=httpserver_auth:10m rate=10r/m;
+limit_req_zone $binary_remote_addr zone=httpserver_write:10m rate=60r/m;
+limit_conn_zone $binary_remote_addr zone=httpserver_connection:10m;
+
+map $http_origin $httpserver_ws_origin_allowed {
+    default 0;
+    "${HTTPSERVER_PUBLIC_ORIGIN}" 1;
+}
+
+upstream httpserver_upstream {
+    least_conn;
+    server webserver-a:8088 max_fails=3 fail_timeout=15s;
+    server webserver-b:8088 max_fails=3 fail_timeout=15s;
+    keepalive 32;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name _;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name _;
+
+    ssl_certificate /etc/nginx/tls/tls.crt;
+    ssl_certificate_key /etc/nginx/tls/tls.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:TLS:10m;
+    ssl_session_timeout 1d;
+    ssl_prefer_server_ciphers off;
+
+    server_tokens off;
+    client_max_body_size 1m;
+    client_header_buffer_size 8k;
+    large_client_header_buffers 2 8k;
+    client_body_timeout 10s;
+    client_header_timeout 10s;
+    keepalive_timeout 65s;
+    limit_conn httpserver_connection 32;
+
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options DENY always;
+    add_header Referrer-Policy no-referrer always;
+    add_header Content-Security-Policy "default-src 'self'; connect-src 'self' wss:; frame-ancestors 'none'; base-uri 'none'" always;
+
+    location = /metrics { return 404; }
+
+    location = /register {
+        limit_req zone=httpserver_auth burst=10 nodelay;
+        proxy_pass http://httpserver_upstream;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Request-ID $request_id;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+
+    location = /login {
+        limit_req zone=httpserver_auth burst=10 nodelay;
+        proxy_pass http://httpserver_upstream;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Request-ID $request_id;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+
+    location = /ws {
+        if ($httpserver_ws_origin_allowed = 0) { return 403; }
+        if ($arg_token != "") { return 400; }
+        limit_req zone=httpserver_write burst=20 nodelay;
+        proxy_pass http://httpserver_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Request-ID $request_id;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_read_timeout 65s;
+        proxy_send_timeout 15s;
+    }
+
+    location / {
+        limit_req zone=httpserver_write burst=60 nodelay;
+        proxy_pass http://httpserver_upstream;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Request-ID $request_id;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_connect_timeout 3s;
+        proxy_read_timeout 15s;
+        proxy_send_timeout 15s;
+    }
+}

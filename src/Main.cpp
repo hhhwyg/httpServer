@@ -7,10 +7,16 @@
 #include <thread>
 #include <unistd.h>
 #include"SqlConnPool.h"
+#include "MySqlChatRepository.h"
 #include "httpserver/config/ServerConfig.h"
 #include "httpserver/application/AuthenticationRateLimiter.h"
 #include "httpserver/application/DatabaseExecutor.h"
+#include "httpserver/application/ChatService.h"
+#include "httpserver/application/OperationalStatus.h"
+#include "httpserver/application/OutboxPublisher.h"
+#include "httpserver/application/RedisClient.h"
 #include "httpserver/transport/EventLoop.h"
+#include "httpdata/HttpData.h"
 #include "Server.h"
 #include "httpserver/base/Logging.h"
 #include "CryptoUtil.h"
@@ -77,8 +83,24 @@ int main(int argc, char* argv[]) {
   httpserver::AuthenticationRateLimiter::Configure(
       config.authenticationRateLimit.maxAttempts,
       config.authenticationRateLimit.windowSeconds);
+  httpserver::ChatService::Instance().ConfigureMessageRateLimit(
+      config.messageRateLimit.maxMessages,
+      config.messageRateLimit.windowSeconds);
+  httpserver::DatabaseExecutor::Configure(
+      {static_cast<std::size_t>(config.database.executorWorkers),
+       static_cast<std::size_t>(config.database.executorQueueCapacity)});
+  httpserver::RedisService::Configure(config.redis);
+  httpserver::RedisService::SetEventHandler([](std::string_view event) {
+    httpserver::ChatService::Instance().DeliverOutboxEvent(event);
+  });
+  httpserver::OutboxPublisher::Configure(config.outbox);
   const httpserver::PollerConfig pollerConfig{config.limits.maxFds,
                                               config.limits.ioUringQueueSize};
+  HttpData::ConfigureOutputBufferLimits(
+      static_cast<std::size_t>(config.limits.outputBufferHighWaterBytes),
+      static_cast<std::size_t>(config.limits.outputBufferHardLimitBytes));
+  HttpData::ConfigureWebSocketOrigins(config.webSocketSecurity.allowedOrigins,
+                                      config.webSocketSecurity.requireOrigin);
 // STL库在多线程上应用
 #ifndef _PTHREADS
   LOG << "_PTHREADS is not defined !";
@@ -87,10 +109,22 @@ int main(int argc, char* argv[]) {
       !SqlConnPool::Instance()->Init(
           config.database.host.c_str(), config.database.port,
           config.database.user.c_str(), config.database.password.c_str(),
-          config.database.database.c_str(), config.database.poolSize)) {
+          config.database.database.c_str(), config.database.poolSize,
+          config.database.operationTimeoutSeconds)) {
     LOG << "Database initialization failed";
     return 1;
   }
+  if (config.database.enabled() && !httpserver::MySqlChatSchemaCurrent()) {
+    LOG << "Database schema is not at migration 002_outbox_leases";
+    return 1;
+  }
+  if (config.database.enabled()) {
+    httpserver::ChatService::Instance().ConfigureRepository(
+        httpserver::CreateMySqlChatRepository());
+  }
+  httpserver::OperationalStatus::ConfigureDatabaseReadiness(
+      config.database.enabled());
+  if (config.database.enabled()) httpserver::OutboxPublisher::Start();
   if (!config.database.enabled()) {
     LOG << "Database authentication routes are disabled";
   }
@@ -118,8 +152,9 @@ int main(int argc, char* argv[]) {
       shuttingDown = true;
       LOG << "Shutdown signal received; stopping new connections";
       myHTTPServer.stopAccepting();
-      shutdownTimer = std::thread([&mainLoop] {
-        std::this_thread::sleep_for(std::chrono::seconds(2));
+      HttpData::BeginGracefulShutdown();
+      shutdownTimer = std::thread([&mainLoop, grace = config.limits.gracefulShutdownSeconds] {
+        std::this_thread::sleep_for(std::chrono::seconds(grace));
         mainLoop.queueInLoop([&mainLoop] { mainLoop.quit(); });
       });
     }
@@ -127,8 +162,15 @@ int main(int argc, char* argv[]) {
   mainLoop.addToPoller(signalChannel);
   mainLoop.loop();
   if (shutdownTimer.joinable()) shutdownTimer.join();
+  LOG << "Shutdown phase: main event loop stopped";
   mainLoop.removeFromPoller(signalChannel);
   close(signalFd);
+  LOG << "Shutdown phase: outbox publisher joining";
+  httpserver::OutboxPublisher::Shutdown();
+  LOG << "Shutdown phase: database executor joining";
   httpserver::DatabaseExecutor::Shutdown();
+  LOG << "Shutdown phase: Redis client joining";
+  httpserver::RedisService::Shutdown();
+  LOG << "Shutdown complete";
   return 0;
 }

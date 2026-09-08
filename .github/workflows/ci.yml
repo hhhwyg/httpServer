@@ -5,7 +5,35 @@ on:
   pull_request:
 
 jobs:
-  test:
+  quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install quality tools and build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++ clang-format clang-tidy liburing-dev libssl-dev default-libmysqlclient-dev libhiredis-dev
+      - name: Check productionization source formatting
+        run: >-
+          clang-format --dry-run --Werror
+          src/application/OutboxPublisher.cpp
+          src/application/ChatService.cpp
+          src/redis/RedisClient.cpp
+          src/sql/MySqlChatRepository.cpp
+      - name: Configure warnings-as-errors build
+        run: cmake --preset debug -DBUILD_TESTING=OFF -DHTTPSERVER_WARNINGS_AS_ERRORS=ON
+      - name: Build warnings-as-errors target
+        run: cmake --build --preset debug --parallel
+      - name: Analyze dependency and persistence paths
+        run: >-
+          clang-tidy -p build/debug
+          src/application/OutboxPublisher.cpp
+          src/application/ChatService.cpp
+          src/redis/RedisClient.cpp
+          src/sql/MySqlChatRepository.cpp
+
+  build-and-test:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -13,16 +41,104 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build g++ liburing-dev libssl-dev default-libmysqlclient-dev
+          sudo apt-get install -y cmake ninja-build g++ liburing-dev libssl-dev default-libmysqlclient-dev libhiredis-dev
       - name: Configure
-        run: cmake --preset debug
+        run: cmake --preset debug -DHTTPSERVER_WARNINGS_AS_ERRORS=ON
       - name: Build
         run: cmake --build --preset debug --parallel
-      - name: Test
-        run: ctest --preset debug
+      - name: Test unit and socket suites
+        run: ctest --preset debug -LE 'redis|database'
       - name: Configure ASan and UBSan
         run: cmake --preset asan
       - name: Build ASan and UBSan
         run: cmake --build --preset asan --parallel
       - name: Test ASan and UBSan
-        run: ctest --preset asan
+        run: ctest --preset asan -LE 'redis|database'
+
+  dependency-integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++ liburing-dev libssl-dev default-libmysqlclient-dev libhiredis-dev
+      - name: Start MySQL and Redis fixtures
+        run: docker compose -f docker-compose.test.yml up -d --wait mysql redis
+      - name: Build integration target
+        run: |
+          cmake --preset debug -DHTTPSERVER_BUILD_DATABASE_INTEGRATION_TESTS=ON
+          cmake --build --preset debug --parallel
+      - name: Test real dependency paths
+        env:
+          HTTPSERVER_JWT_SECRET: ci-integration-secret-at-least-32-bytes
+          HTTPSERVER_DB_HOST: 127.0.0.1
+          HTTPSERVER_DB_PORT: 33306
+          HTTPSERVER_DB_USER: httpserver
+          HTTPSERVER_DB_PASSWORD: test-database-password
+          HTTPSERVER_DB_NAME: webserver
+          HTTPSERVER_REDIS_HOST: 127.0.0.1
+          HTTPSERVER_REDIS_PORT: 36379
+        run: ctest --test-dir build/debug -L 'database|redis' --output-on-failure -j 1
+      - name: Stop dependency fixtures
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v
+
+  compose-e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      HTTPSERVER_JWT_SECRET: ci-compose-secret-at-least-32-bytes
+      HTTPSERVER_DB_PASSWORD: ci-compose-database-password
+      MYSQL_ROOT_PASSWORD: ci-compose-root-password
+      HTTPSERVER_TEST_COMPOSE_FILE: docker-compose.scale.yml
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start two application instances
+        run: docker compose -f docker-compose.scale.yml up -d --build
+      - name: Test cross-instance delivery and Outbox recovery
+        run: |
+          python3 tests/e2e/CrossInstanceChatTest.py 18080 18081
+          python3 tests/integration/OutboxRecoveryTest.py 18080
+      - name: Show service logs after failure
+        if: failure()
+        run: docker compose -f docker-compose.scale.yml logs --no-color --tail 200
+      - name: Stop E2E topology
+        if: always()
+        run: docker compose -f docker-compose.scale.yml down -v
+
+  security:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_CONFIG: .gitleaks.toml
+      - name: Build release image
+        run: docker build -f Dockerfile.deploy -t httpserver:ci .
+      - name: Scan release image
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: httpserver:ci
+          format: table
+          exit-code: '1'
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+
+  compose-config:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Render production topology
+        env:
+          HTTPSERVER_JWT_SECRET: ci-jwt-secret-with-at-least-thirty-two-bytes
+          HTTPSERVER_DB_PASSWORD: ci-database-password
+          MYSQL_ROOT_PASSWORD: ci-root-password
+          HTTPSERVER_PUBLIC_ORIGIN: https://chat.example.test
+          HTTPSERVER_GRAFANA_ADMIN_PASSWORD: ci-grafana-password
+        run: docker compose -f docker-compose.production.yml config

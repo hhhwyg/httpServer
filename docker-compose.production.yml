@@ -1,30 +1,189 @@
+x-web-environment: &web_environment
+  HTTPSERVER_JWT_SECRET: ${HTTPSERVER_JWT_SECRET:?set a random JWT secret}
+  HTTPSERVER_DB_HOST: mysql
+  HTTPSERVER_DB_PORT: 3306
+  HTTPSERVER_DB_USER: httpserver
+  HTTPSERVER_DB_PASSWORD: ${HTTPSERVER_DB_PASSWORD:?set a database password}
+  HTTPSERVER_DB_NAME: webserver
+  HTTPSERVER_REDIS_HOST: redis
+  HTTPSERVER_REDIS_PORT: 6379
+  HTTPSERVER_WS_ALLOWED_ORIGINS: ${HTTPSERVER_PUBLIC_ORIGIN:?set the HTTPS browser origin}
+
+x-web-restrictions: &web_restrictions
+  read_only: true
+  tmpfs:
+    - /tmp
+  pids_limit: 256
+  mem_limit: 512m
+  cpus: 1.0
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  restart: unless-stopped
+
 services:
-  webserver:
+  webserver-a:
+    image: ${HTTPSERVER_IMAGE:-httpserver:release}
     build:
       context: .
       dockerfile: Dockerfile.deploy
     environment:
-      HTTPSERVER_JWT_SECRET: ${HTTPSERVER_JWT_SECRET:?set a random JWT secret}
-      HTTPSERVER_DB_HOST: mysql
-      HTTPSERVER_DB_PORT: 3306
-      HTTPSERVER_DB_USER: httpserver
-      HTTPSERVER_DB_PASSWORD: ${HTTPSERVER_DB_PASSWORD:?set a database password}
-      HTTPSERVER_DB_NAME: webserver
+      <<: *web_environment
+      HTTPSERVER_INSTANCE_ID: webserver-a
+      HTTPSERVER_OUTBOX_PUBLISHER_ID: webserver-a
+      HTTPSERVER_WS_ALLOWED_ORIGINS: ${HTTPSERVER_PUBLIC_ORIGIN:?set the HTTPS browser origin}
     depends_on:
       mysql:
         condition: service_healthy
-    ports:
-      - "8088:8088"
+      redis:
+        condition: service_healthy
+    expose:
+      - "8088"
     volumes:
       - webserver-logs:/var/log/httpserver
+    command: ["/app/WebServer", "-b", "epoll", "-l", "/var/log/httpserver/webserver-a.log"]
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8088/readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+    <<: *web_restrictions
+
+  webserver-b:
+    image: ${HTTPSERVER_IMAGE:-httpserver:release}
+    build:
+      context: .
+      dockerfile: Dockerfile.deploy
+    environment:
+      <<: *web_environment
+      HTTPSERVER_INSTANCE_ID: webserver-b
+      HTTPSERVER_OUTBOX_PUBLISHER_ID: webserver-b
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    expose:
+      - "8088"
+    volumes:
+      - webserver-logs:/var/log/httpserver
+    command: ["/app/WebServer", "-b", "epoll", "-l", "/var/log/httpserver/webserver-b.log"]
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8088/readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+    <<: *web_restrictions
+
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on:
+      webserver-a:
+        condition: service_healthy
+      webserver-b:
+        condition: service_healthy
+    environment:
+      HTTPSERVER_PUBLIC_ORIGIN: ${HTTPSERVER_PUBLIC_ORIGIN:?set the HTTPS browser origin}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx/httpserver.conf.template:/etc/nginx/templates/httpserver.conf.template:ro
+      - ./deploy/nginx/tls:/etc/nginx/tls:ro
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+      - /etc/nginx/conf.d
+    pids_limit: 128
+    mem_limit: 128m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+      # Lets the root Nginx master read a 0600 host-mounted TLS private key.
+      - DAC_OVERRIDE
+      # The master assigns its tmpfs cache directories to unprivileged workers.
+      - CHOWN
+      # Nginx master drops worker privileges to the bundled nginx account.
+      - SETUID
+      - SETGID
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.5.5
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/prometheus/rules.yml:/etc/prometheus/rules.yml:ro
+      - prometheus-data:/prometheus
     read_only: true
     tmpfs:
       - /tmp
-    pids_limit: 256
+    pids_limit: 128
     mem_limit: 512m
-    cpus: 1.0
     security_opt:
       - no-new-privileges:true
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:13.1.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${HTTPSERVER_GRAFANA_ADMIN_PASSWORD:?set a Grafana admin password}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    depends_on:
+      prometheus:
+        condition: service_started
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    pids_limit: 128
+    mem_limit: 256m
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  alertmanager:
+    image: prom/alertmanager:v0.33.1
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    volumes:
+      - ./deploy/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    read_only: true
+    tmpfs:
+      - /tmp
+    pids_limit: 128
+    mem_limit: 128m
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:v1.12.1
+    command:
+      - --path.rootfs=/host
+    pid: host
+    user: "65534:65534"
+    volumes:
+      - /:/host:ro
+    read_only: true
+    pids_limit: 64
+    mem_limit: 128m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     restart: unless-stopped
 
   mysql:
@@ -36,7 +195,7 @@ services:
       MYSQL_PASSWORD: ${HTTPSERVER_DB_PASSWORD:?set a database password}
     volumes:
       - mysql-data:/var/lib/mysql
-      - ./tests/integration/mysql-init.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 5s
@@ -44,6 +203,22 @@ services:
       retries: 20
     restart: unless-stopped
 
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
 volumes:
   mysql-data:
+  redis-data:
   webserver-logs:
+  prometheus-data:
+  grafana-data:
+  alertmanager-data:

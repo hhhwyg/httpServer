@@ -1,0 +1,71 @@
+name: httpserver-scale
+
+x-web-environment: &web_environment
+  HTTPSERVER_JWT_SECRET: ${HTTPSERVER_JWT_SECRET:?set a random JWT secret}
+  HTTPSERVER_DB_HOST: mysql
+  HTTPSERVER_DB_PORT: 3306
+  HTTPSERVER_DB_USER: httpserver
+  HTTPSERVER_DB_PASSWORD: ${HTTPSERVER_DB_PASSWORD:?set a database password}
+  HTTPSERVER_DB_NAME: webserver
+  HTTPSERVER_REDIS_HOST: redis
+  HTTPSERVER_REDIS_PORT: 6379
+
+services:
+  instance-a:
+    build:
+      context: .
+      dockerfile: Dockerfile.deploy
+      target: build
+    command: ["/source/build/release/WebServer", "-b", "epoll", "-t", "2", "-p", "8088", "-l", "/tmp/instance-a.log"]
+    ports: ["18080:8088"]
+    depends_on:
+      mysql: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    environment:
+      <<: *web_environment
+      HTTPSERVER_INSTANCE_ID: instance-a
+      HTTPSERVER_OUTBOX_PUBLISHER_ID: instance-a
+    restart: on-failure:5
+
+  instance-b:
+    build:
+      context: .
+      dockerfile: Dockerfile.deploy
+      target: build
+    command: ["/source/build/release/WebServer", "-b", "epoll", "-t", "2", "-p", "8088", "-l", "/tmp/instance-b.log"]
+    ports: ["18081:8088"]
+    depends_on:
+      mysql: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    environment:
+      <<: *web_environment
+      HTTPSERVER_INSTANCE_ID: instance-b
+      HTTPSERVER_OUTBOX_PUBLISHER_ID: instance-b
+    restart: on-failure:5
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set a root password}
+      MYSQL_DATABASE: webserver
+      MYSQL_USER: httpserver
+      MYSQL_PASSWORD: ${HTTPSERVER_DB_PASSWORD:?set a database password}
+    volumes:
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
+      - scale-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7.4-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  scale-mysql-data:

@@ -1,5 +1,19 @@
 # M4：Redis 集成
 
+## 完成状态
+
+已完成。实现位于 `src/redis/RedisClient.cpp`：生产构建通过 hiredis 连接 Redis；缺少 hiredis 的开发构建显式禁用 Redis 并保留本地限流回退，不会悄然链接错误依赖。
+
+| 能力 | 实现与边界 | 验收结果 |
+| --- | --- | --- |
+| 客户端与关闭 | 命令连接和订阅连接各自归专用线程；有界队列、连接/命令超时、可中断指数退避和最大重连次数 | `docker stop -t 4` 正常退出，退出码为 0 |
+| 分布式限流 | Lua 原子 `INCR`/`PEXPIRE`；登录、建房和发消息均通过语义化接口调用；Redis 不可用时退回本地限制 | 双实例共享 10 次阈值，100 并发中恰好 10 次放行 |
+| Cache Aside | 房间和最近消息以异步 best-effort 回填，读未命中回源；发送消息后失效相关键；指标暴露 hit/miss/error/队列深度 | 命中、删除键、回源并再次回填均已验证 |
+| Presence 与 Pub/Sub | 每实例 10 秒续期、30 秒 TTL；WebSocket 建连登记、断连删除；订阅连接为 M5 暴露线程边界明确的回调 | Redis 停止/恢复测试验证 presence 清理与重新连接 |
+| 可测试性 | `RedisService` 依赖 `RedisClient` 抽象，`SetClientForTesting` 可安装 fake；fake 覆盖缓存、限流和订阅回调 | 含 hiredis 的 Docker 构建编译 `RedisClientTest` |
+
+缓存写入和失效不等待 Redis 返回，队列满时计入 rejected 指标并继续由 MySQL 提供权威数据；Lua 限流和缓存读取才等待受命令超时约束的结果。任何已发送命令发生 I/O 错误时都不重放，以免产生未知副作用。
+
 ## 目标
 
 引入 Redis 解决多实例下本地状态不共享的问题，而不是把它作为技术栈装饰。第一版职责限定为分布式限流、可重建缓存、在线状态和 Pub/Sub 通道；聊天消息的可靠存储仍由 MySQL 负责。
@@ -52,14 +66,22 @@
 
 ```bash
 docker compose -f docker-compose.test.yml up -d redis
-ctest --preset debug -L redis --output-on-failure
-python3 tests/integration/RedisRateLimitTest.py ./build/debug/WebServer 18314
-python3 tests/integration/RedisFailureRecoveryTest.py ./build/debug/WebServer 18315
+docker build --target build -f Dockerfile.deploy -t httpserver-m4-buildcheck .
+
+# 以两个使用同一 Redis 的实例启动服务后执行：
+HTTPSERVER_REDIS_HOST=127.0.0.1 HTTPSERVER_REDIS_PORT=36379 \
+  python3 tests/integration/RedisRateLimitTest.py external 18314 18315
+python3 tests/integration/RedisCacheTest.py 18320
+HTTPSERVER_REDIS_HOST=127.0.0.1 HTTPSERVER_REDIS_PORT=36379 \
+  python3 tests/integration/RedisFailureRecoveryTest.py external 18319
+python3 tests/integration/RedisAuthenticationFailureTest.py external 18321
 ```
 
 验收包括：两个应用实例对同一用户共享限流计数；100 个并发请求不会突破配置上限；缓存命中降低 MySQL 查询数；删除缓存后可正确回源；Redis 停止时 EventLoop 延迟不出现依赖超时之外的长时间停顿；Redis 恢复后自动重连；关闭服务时 Redis 线程可在规定时间退出。
 
 使用 TSan 单测验证任务队列和关闭竞态，使用指标确认队列长度有界。不得以“Redis 命令返回成功”代替业务和故障验收。
+
+本次完成验收记录：`redis_rate_limit_acceptance shared_limit=10 concurrent=100`、`redis_cache_acceptance cache_hit=1 cache_miss=1 invalidation_refill=1`、`redis_failure_recovery_acceptance fallback_lt=2s reconnected=1 presence=clean`、`redis_auth_failure_acceptance fallback_lt=2s`。
 
 ## 交付物
 

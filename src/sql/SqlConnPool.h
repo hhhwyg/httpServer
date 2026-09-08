@@ -14,7 +14,8 @@ public:
 
     bool Init(const char* host, int port,
               const char* user, const char* pwd,
-              const char* dbName, int connSize);
+              const char* dbName, int connSize,
+              int operationTimeoutSeconds = 3);
 
     MYSQL *GetConn();
     void FreeConn(MYSQL * conn);
@@ -32,6 +33,7 @@ private:
     int freeCount_ = 0;
     bool initialized_ = false;
     bool semaphoreInitialized_ = false;
+    int acquireTimeoutSeconds_ = 3;
 
     std::queue<MYSQL *> connQue_; // 连接队列
     mutable std::mutex mtx_;      // 互斥锁 (保护队列)

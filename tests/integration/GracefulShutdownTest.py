@@ -32,6 +32,7 @@ def main():
     process = subprocess.Popen(
         [sys.argv[1], "-b", "epoll", "-t", "1", "-p", sys.argv[2], "-l", log_path],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        env={**os.environ, "HTTPSERVER_GRACEFUL_SHUTDOWN_SECONDS": "2"},
     )
     try:
         wait_for_server(int(sys.argv[2]))

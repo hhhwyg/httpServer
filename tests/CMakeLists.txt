@@ -231,6 +231,39 @@ set_tests_properties(integration.websocket_smoke PROPERTIES
 )
 
 add_test(
+    NAME security.authentication_abuse
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/security/AuthenticationAbuseTest.py
+            $<TARGET_FILE:WebServer> 18105
+)
+set_tests_properties(security.authentication_abuse PROPERTIES
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    LABELS "integration;security;authentication"
+    TIMEOUT 20
+)
+
+add_test(
+    NAME security.websocket_origin
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/security/WebSocketOriginTest.py
+            $<TARGET_FILE:WebServer> 18106
+)
+set_tests_properties(security.websocket_origin PROPERTIES
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    LABELS "integration;security;websocket"
+    TIMEOUT 20
+)
+
+add_test(
+    NAME security.authorization_matrix
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/security/AuthorizationMatrixTest.py
+            $<TARGET_FILE:WebServer> 18107
+)
+set_tests_properties(security.authorization_matrix PROPERTIES
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    LABELS "integration;security;authorization"
+    TIMEOUT 20
+)
+
+add_test(
     NAME integration.connection_lifecycle
     COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/ConnectionLifecycleStressTest.py
             $<TARGET_FILE:WebServer> 18098
@@ -246,11 +279,105 @@ add_test(
     COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/GracefulShutdownTest.py
             $<TARGET_FILE:WebServer> 18101
 )
+
+add_test(
+    NAME observability.metrics_scenario
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/observability/MetricsScenarioTest.py
+            $<TARGET_FILE:WebServer> 18104
+)
+set_tests_properties(observability.metrics_scenario PROPERTIES
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    LABELS "integration;observability;metrics"
+    TIMEOUT 20
+)
 set_tests_properties(integration.graceful_shutdown PROPERTIES
     WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
     LABELS "integration;lifecycle;operations"
     TIMEOUT 12
 )
+
+add_test(
+    NAME resilience.slow_consumer
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/resilience/SlowConsumerTest.py
+            $<TARGET_FILE:WebServer> 18102
+)
+set_tests_properties(resilience.slow_consumer PROPERTIES
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    LABELS "resilience;lifecycle;backpressure"
+    TIMEOUT 20
+)
+
+add_test(
+    NAME resilience.graceful_drain
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/resilience/GracefulDrainTest.py
+            $<TARGET_FILE:WebServer> 18103
+)
+set_tests_properties(resilience.graceful_drain PROPERTIES
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    LABELS "resilience;lifecycle;operations"
+    TIMEOUT 15
+)
+
+if(HIREDIS_INCLUDE_DIR AND HIREDIS_LIBRARY)
+    add_executable(RedisClientTest application/RedisClientTest.cpp)
+    target_link_libraries(RedisClientTest PRIVATE httpserver::core)
+    add_test(NAME application.redis_client COMMAND RedisClientTest)
+    set_tests_properties(application.redis_client PROPERTIES
+        LABELS "unit;application;redis"
+    )
+    add_test(
+        NAME integration.redis_rate_limit
+        COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/RedisRateLimitTest.py
+                $<TARGET_FILE:WebServer> 18314 18315
+    )
+    set_tests_properties(integration.redis_rate_limit PROPERTIES
+        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+        LABELS "integration;redis;concurrency;security"
+        TIMEOUT 60
+    )
+    add_test(
+        NAME integration.redis_failure_recovery
+        COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/RedisFailureRecoveryTest.py
+                $<TARGET_FILE:WebServer> 18319
+    )
+    set_tests_properties(integration.redis_failure_recovery PROPERTIES
+        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+        LABELS "integration;redis;reliability;lifecycle"
+        TIMEOUT 90
+    )
+    add_test(
+        NAME integration.redis_authentication_failure
+        COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/RedisAuthenticationFailureTest.py
+                $<TARGET_FILE:WebServer> 18321
+    )
+    set_tests_properties(integration.redis_authentication_failure PROPERTIES
+        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+        LABELS "integration;redis;security;reliability"
+        TIMEOUT 30
+    )
+    if(HTTPSERVER_BUILD_DATABASE_INTEGRATION_TESTS)
+        add_test(
+            NAME integration.redis_cache
+            COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/RedisCacheTest.py
+                    $<TARGET_FILE:WebServer> 18320
+        )
+        set_tests_properties(integration.redis_cache PROPERTIES
+            WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+            LABELS "integration;redis;database;cache"
+            TIMEOUT 30
+        )
+    endif()
+    add_test(
+        NAME security.token_revocation
+        COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/security/TokenRevocationTest.py
+                $<TARGET_FILE:WebServer> 18108
+    )
+    set_tests_properties(security.token_revocation PROPERTIES
+        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+        LABELS "integration;redis;security;authentication"
+        TIMEOUT 30
+    )
+endif()
 
 if(HTTPSERVER_BUILD_DATABASE_INTEGRATION_TESTS)
     add_test(
@@ -262,5 +389,35 @@ if(HTTPSERVER_BUILD_DATABASE_INTEGRATION_TESTS)
         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
         LABELS "integration;database;security"
         TIMEOUT 30
+    )
+    add_test(
+        NAME integration.persistence_restart
+        COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/PersistenceRestartTest.py
+                $<TARGET_FILE:WebServer> 18313
+    )
+    set_tests_properties(integration.persistence_restart PROPERTIES
+        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+        LABELS "integration;database;chat;reliability"
+        TIMEOUT 40
+    )
+    add_test(
+        NAME integration.transaction_rollback
+        COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/TransactionRollbackTest.py
+                $<TARGET_FILE:WebServer> 18314
+    )
+    set_tests_properties(integration.transaction_rollback PROPERTIES
+        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+        LABELS "integration;database;chat;reliability"
+        TIMEOUT 40
+    )
+    add_test(
+        NAME integration.database_message_idempotency
+        COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/DatabaseMessageIdempotencyTest.py
+                $<TARGET_FILE:WebServer> 18316
+    )
+    set_tests_properties(integration.database_message_idempotency PROPERTIES
+        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+        LABELS "integration;database;chat;reliability;concurrency"
+        TIMEOUT 40
     )
 endif()

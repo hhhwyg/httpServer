@@ -1,0 +1,13 @@
+{
+  "uid": "httpserver-overview",
+  "title": "httpServer Overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "15s",
+  "panels": [
+    {"type":"timeseries","title":"HTTP requests and errors","targets":[{"expr":"sum(rate(httpserver_http_requests_total[5m]))","legendFormat":"requests/s"},{"expr":"sum(rate(httpserver_http_requests_total{status_class=\"5xx\"}[5m]))","legendFormat":"5xx/s"}]},
+    {"type":"timeseries","title":"WebSocket","targets":[{"expr":"httpserver_websocket_connections","legendFormat":"connections"},{"expr":"sum(rate(httpserver_websocket_messages_total[5m]))","legendFormat":"messages/s"}]},
+    {"type":"timeseries","title":"Dependencies","targets":[{"expr":"httpserver_database_executor_queue_depth","legendFormat":"database queue"},{"expr":"httpserver_redis_queue_depth","legendFormat":"redis queue"},{"expr":"rate(httpserver_redis_errors_total[5m])","legendFormat":"redis errors/s"}]},
+    {"type":"timeseries","title":"Outbox and resources","targets":[{"expr":"rate(httpserver_outbox_published_total[5m])","legendFormat":"published/s"},{"expr":"httpserver_connections_active","legendFormat":"connections"},{"expr":"rate(httpserver_slow_consumer_closed_total[5m])","legendFormat":"slow closes/s"}]}
+  ]
+}

@@ -1,6 +1,7 @@
 #include "SqlConnPool.h"
 
 #include <cerrno>
+#include <ctime>
 #include <vector>
 
 SqlConnPool::SqlConnPool() = default;
@@ -11,8 +12,10 @@ SqlConnPool* SqlConnPool::Instance() {
 }
 
 bool SqlConnPool::Init(const char* host, int port, const char* user,
-                       const char* pwd, const char* dbName, int connSize) {
-  if (!host || !user || !pwd || !dbName || connSize <= 0) {
+                       const char* pwd, const char* dbName, int connSize,
+                       int operationTimeoutSeconds) {
+  if (!host || !user || !pwd || !dbName || connSize <= 0 ||
+      operationTimeoutSeconds <= 0) {
     return false;
   }
 
@@ -31,6 +34,10 @@ bool SqlConnPool::Init(const char* host, int port, const char* user,
 
     const unsigned int connectTimeoutSeconds = 3;
     mysql_options(sql, MYSQL_OPT_CONNECT_TIMEOUT, &connectTimeoutSeconds);
+    const unsigned int operationTimeout =
+        static_cast<unsigned int>(operationTimeoutSeconds);
+    mysql_options(sql, MYSQL_OPT_READ_TIMEOUT, &operationTimeout);
+    mysql_options(sql, MYSQL_OPT_WRITE_TIMEOUT, &operationTimeout);
     if (!mysql_real_connect(sql, host, user, pwd, dbName, port, nullptr, 0)) {
       LOG << "MySQL connection failed: " << mysql_error(sql);
       mysql_close(sql);
@@ -59,15 +66,26 @@ bool SqlConnPool::Init(const char* host, int port, const char* user,
   }
   MAX_CONN_ = connSize;
   freeCount_ = connSize;
+  acquireTimeoutSeconds_ = operationTimeoutSeconds;
   initialized_ = true;
   return true;
 }
 
 MYSQL* SqlConnPool::GetConn() {
-  std::lock_guard<std::mutex> locker(mtx_);
-  if (!initialized_ || sem_trywait(&semId_) != 0) {
+  int timeoutSeconds = 0;
+  {
+    std::lock_guard<std::mutex> locker(mtx_);
+    if (!initialized_) return nullptr;
+    timeoutSeconds = acquireTimeoutSeconds_;
+  }
+  timespec deadline{};
+  if (clock_gettime(CLOCK_REALTIME, &deadline) != 0) return nullptr;
+  deadline.tv_sec += timeoutSeconds;
+  while (sem_timedwait(&semId_, &deadline) != 0) {
+    if (errno == EINTR) continue;
     return nullptr;
   }
+  std::lock_guard<std::mutex> locker(mtx_);
   if (connQue_.empty()) {
     sem_post(&semId_);
     return nullptr;
@@ -120,6 +138,7 @@ void SqlConnPool::ClosePool() {
     connections.swap(connQue_);
     initialized_ = false;
     MAX_CONN_ = 0;
+    acquireTimeoutSeconds_ = 3;
     useCount_ = 0;
     freeCount_ = 0;
   }

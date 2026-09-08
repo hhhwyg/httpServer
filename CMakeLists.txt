@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(httpServer VERSION 0.1.0 LANGUAGES CXX)
+project(httpServer VERSION 0.1.0 LANGUAGES C CXX)
 
 include(CTest)
 
@@ -20,6 +20,9 @@ set(HTTPSERVER_CORE_SOURCES
     src/application/DatabaseExecutor.cpp
     src/application/Metrics.cpp
     src/application/OperationalStatus.cpp
+    src/application/StructuredLog.cpp
+    src/application/OutboxPublisher.cpp
+    src/redis/RedisClient.cpp
     src/application/ApplicationRouter.cpp
     src/application/ChatApplication.cpp
     src/application/ChatService.cpp
@@ -48,6 +51,7 @@ set(HTTPSERVER_CORE_SOURCES
     src/protocol/ChatProtocol.cpp
     src/server/Server.cpp
     src/sql/SqlConnPool.cpp
+    src/sql/MySqlChatRepository.cpp
     src/sql/UserRepository.cpp
     src/timer/Timer.cpp
     src/util/CryptoUtil.cpp
@@ -61,6 +65,9 @@ find_library(MYSQL_LIBRARY NAMES mysqlclient mariadb REQUIRED)
 find_path(URING_INCLUDE_DIR NAMES liburing.h REQUIRED)
 find_library(URING_LIBRARY NAMES uring REQUIRED)
 
+find_path(HIREDIS_INCLUDE_DIR NAMES hiredis/hiredis.h)
+find_library(HIREDIS_LIBRARY NAMES hiredis)
+
 # Implementation-only headers still use short cross-module includes such as
 # "EventLoop.h". Keep those source directories private to the core target.
 set(HTTPSERVER_LEGACY_INCLUDE_DIRS
@@ -71,7 +78,8 @@ set(HTTPSERVER_LEGACY_INCLUDE_DIRS
     ${PROJECT_SOURCE_DIR}/src/epoll
     ${PROJECT_SOURCE_DIR}/src/eventloop
     ${PROJECT_SOURCE_DIR}/src/httpdata
-    ${PROJECT_SOURCE_DIR}/src/server
+        ${PROJECT_SOURCE_DIR}/src/server
+        ${PROJECT_SOURCE_DIR}/src/redis
     ${PROJECT_SOURCE_DIR}/src/sql
     ${PROJECT_SOURCE_DIR}/src/timer
     ${PROJECT_SOURCE_DIR}/src/util
@@ -123,6 +131,14 @@ target_link_libraries(httpserver_core
         OpenSSL::SSL
         OpenSSL::Crypto
 )
+if(HIREDIS_INCLUDE_DIR AND HIREDIS_LIBRARY)
+    target_include_directories(httpserver_core PRIVATE ${HIREDIS_INCLUDE_DIR})
+    target_link_libraries(httpserver_core PRIVATE ${HIREDIS_LIBRARY})
+    target_compile_definitions(httpserver_core PRIVATE HTTPSERVER_HAS_HIREDIS=1)
+else()
+    message(WARNING "hiredis was not found; Redis is disabled in this build")
+    target_compile_definitions(httpserver_core PRIVATE HTTPSERVER_HAS_HIREDIS=0)
+endif()
 
 add_executable(WebServer src/Main.cpp)
 target_include_directories(WebServer PRIVATE

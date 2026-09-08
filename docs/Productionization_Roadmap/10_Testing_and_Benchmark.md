@@ -1,5 +1,7 @@
 # M10：测试、故障演练与性能验证
 
+> 完成状态：测试框架、故障矩阵和业务 WebSocket 基准已实现；目标服务器上的 30 分钟对照、24 小时长稳与 release artifact 尚未执行，因此 M10 尚未最终关闭。
+
 ## 目标
 
 建立覆盖正确性、可靠性、资源安全和容量边界的验证体系。最终报告要回答服务在指定机器和场景下能维持多少连接、多少消息吞吐、怎样的尾延迟和错误率，以及 Redis/MySQL 或实例故障时用户看到什么。
@@ -62,9 +64,9 @@
 scripts/validate_linux.sh debug
 scripts/validate_linux.sh asan
 tests/benchmark/run_http_benchmark.sh https://127.0.0.1/ping
-tests/benchmark/run_websocket_benchmark.sh deploy/benchmark/scenario-single-instance.toml
-tests/benchmark/run_websocket_benchmark.sh deploy/benchmark/scenario-cross-instance.toml
-tests/benchmark/run_soak_test.sh deploy/benchmark/scenario-soak-24h.toml
+tests/benchmark/run_websocket_benchmark.sh deploy/benchmark/scenario-single-instance.env
+tests/benchmark/run_websocket_benchmark.sh deploy/benchmark/scenario-cross-instance.env
+tests/benchmark/run_soak_test.sh deploy/benchmark/scenario-soak-24h.env
 tests/resilience/run_fault_matrix.sh
 ```
 
@@ -79,3 +81,9 @@ tests/resilience/run_fault_matrix.sh
 - 24 小时长稳结果和资源曲线
 - 单实例/双实例对照报告
 - 与 Git tag 对应的原始结果 release artifact
+
+## 实施结果与验收
+
+`scripts/validate_linux.sh` 继续提供 Debug/ASan/TSan 构建入口；`tests/resilience/run_fault_matrix.sh` 聚合慢客户端、优雅排空和 shutdown，Toxiproxy 通过 `HTTPSERVER_RUN_TOXIPROXY=1` 显式启用。`tests/benchmark/run_websocket_benchmark.py` 验证真实 WebSocket upgrade 和 masked ping/pong；业务模式由 `run_chat_benchmark.py` 创建 V1 房间、加入可配置数量的接收者，并逐条校验 ACK 与所有 `clientMessageId`。`run_websocket_benchmark.sh` 按 `deploy/benchmark/*.env` 保存原始结果。`run_soak_test.sh` 需要 `HTTPSERVER_ALLOW_LONG_SOAK=1`，避免误执行 24 小时任务。
+
+短时 smoke 在本机 Debug、epoll、2 条持久 WebSocket、1 秒窗口下得到 `successful_handshake_ping=6414`、`errors=0`、`p99=0.668ms`。这仅验证基准客户端和协议路径，不能与 `docs/Performance_Analysis.md` 的 Release HTTP 基线混用，也不是容量承诺。发布前必须在目标机用 30 分钟场景和 24 小时场景生成 Git SHA 对应 artifact，并依据消息 ID 校验遗漏/重复。

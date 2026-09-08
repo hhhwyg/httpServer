@@ -1,12 +1,14 @@
 #include "UserController.h"
 
 #include <cctype>
+#include <chrono>
 #include <optional>
 #include <utility>
 
 #include "CryptoUtil.h"
 #include "httpserver/application/AuthenticationRateLimiter.h"
 #include "httpserver/application/DatabaseExecutor.h"
+#include "httpserver/application/RedisClient.h"
 #include "httpserver/application/UserRepository.h"
 #include "json.hpp"
 
@@ -55,14 +57,15 @@ std::optional<std::pair<std::string, std::string>> parseCredentials(
 
 }  // namespace
 
-bool registerUser(const std::string& username, const std::string& password) {
+UserCreateResult registerUser(const std::string& username,
+                              const std::string& password) {
   if (!isValidUsername(username) || !isValidPassword(password)) {
-    return false;
+    return UserCreateResult::kAlreadyExists;
   }
 
   const std::string passwordHash = CryptoUtil::hashPassword(password);
   if (passwordHash.empty()) {
-    return false;
+    return UserCreateResult::kUnavailable;
   }
 
   return GetUserRepository().create(username, passwordHash);
@@ -95,13 +98,33 @@ void handleRegister(const ApplicationRequest& request,
   }
   const std::string username = credentials->first;
   const std::string password = credentials->second;
-  if (!DatabaseExecutor::Submit([username, password, sendResponse] {
-        if (!registerUser(username, password)) {
+  const std::string remoteAddress = request.remoteAddress;
+  if (!DatabaseExecutor::Submit([username, password, remoteAddress, sendResponse] {
+        const bool userAllowed = AuthenticationRateLimiter::AllowDistributed(
+            "register:user", username);
+        const bool ipAllowed = remoteAddress.empty() ||
+            AuthenticationRateLimiter::AllowDistributed("register:ip", remoteAddress,
+                                                        1000, 60);
+        if (!userAllowed || !ipAllowed) {
+          sendResponse(429, "application/json",
+                       "{\"ok\":false,\"msg\":\"Too many attempts\"}");
+          return;
+        }
+        const UserCreateResult result = registerUser(username, password);
+        if (result == UserCreateResult::kUnavailable) {
+          sendResponse(503, "application/json",
+                       "{\"ok\":false,\"msg\":\"Registration unavailable\"}");
+          return;
+        }
+        if (result != UserCreateResult::kCreated) {
           sendResponse(400, "application/json",
                        "{\"ok\":false,\"msg\":\"Registration failed\"}");
           return;
         }
         sendResponse(201, "application/json", "{\"ok\":true}");
+      }, std::chrono::seconds(3), [sendResponse] {
+        sendResponse(503, "application/json",
+                     "{\"ok\":false,\"msg\":\"Registration unavailable\"}");
       })) {
     sendResponse(503, "application/json",
                  "{\"ok\":false,\"msg\":\"Registration unavailable\"}");
@@ -122,17 +145,6 @@ void handleLogin(const ApplicationRequest& request,
   }
 
   const auto credentials = parseCredentials(request);
-  if (credentials.has_value()) {
-    const bool userAllowed =
-        AuthenticationRateLimiter::Allow("login:user:" + credentials->first);
-    const bool ipAllowed = request.remoteAddress.empty() ||
-        AuthenticationRateLimiter::Allow("login:ip:" + request.remoteAddress);
-    if (!userAllowed || !ipAllowed) {
-      sendResponse(429, "application/json",
-                   "{\"ok\":false,\"msg\":\"Too many attempts\"}");
-      return;
-    }
-  }
   if (!credentials.has_value()) {
     sendResponse(401, "application/json",
                  "{\"ok\":false,\"msg\":\"Invalid username or password\"}");
@@ -140,7 +152,18 @@ void handleLogin(const ApplicationRequest& request,
   }
   const std::string username = credentials->first;
   const std::string password = credentials->second;
-  if (!DatabaseExecutor::Submit([username, password, sendResponse] {
+  const std::string remoteAddress = request.remoteAddress;
+  if (!DatabaseExecutor::Submit([username, password, remoteAddress, sendResponse] {
+        const bool userAllowed = AuthenticationRateLimiter::AllowDistributed(
+            "login:user", username);
+        const bool ipAllowed = remoteAddress.empty() ||
+            AuthenticationRateLimiter::AllowDistributed("login:ip", remoteAddress,
+                                                        1000, 60);
+        if (!userAllowed || !ipAllowed) {
+          sendResponse(429, "application/json",
+                       "{\"ok\":false,\"msg\":\"Too many attempts\"}");
+          return;
+        }
         if (!checkLogin(username, password)) {
           sendResponse(401, "application/json",
                        "{\"ok\":false,\"msg\":\"Invalid username or password\"}");
@@ -154,9 +177,39 @@ void handleLogin(const ApplicationRequest& request,
         }
         const json response = {{"ok", true}, {"token", token}};
         sendResponse(200, "application/json", response.dump());
+      }, std::chrono::seconds(3), [sendResponse] {
+        sendResponse(503, "application/json",
+                     "{\"ok\":false,\"msg\":\"Login unavailable\"}");
       })) {
     sendResponse(503, "application/json",
                  "{\"ok\":false,\"msg\":\"Login unavailable\"}");
+  }
+}
+
+void handleLogout(const AuthenticatedToken& token,
+                  const ResponseSender& sendResponse) {
+  const std::int64_t now = std::chrono::duration_cast<std::chrono::seconds>(
+      std::chrono::system_clock::now().time_since_epoch()).count();
+  const std::int64_t remaining = token.expiresAt - now;
+  if (token.jti.empty() || remaining <= 0 || !RedisService::enabled()) {
+    sendResponse(503, "application/json",
+                 "{\"ok\":false,\"msg\":\"Logout unavailable\"}");
+    return;
+  }
+  const int ttlSeconds = static_cast<int>(std::min<std::int64_t>(remaining, 86400));
+  if (!DatabaseExecutor::Submit([jti = token.jti, ttlSeconds, sendResponse] {
+        if (!RedisService::RevokeToken(jti, ttlSeconds)) {
+          sendResponse(503, "application/json",
+                       "{\"ok\":false,\"msg\":\"Logout unavailable\"}");
+          return;
+        }
+        sendResponse(204, "application/json", "");
+      }, std::chrono::seconds(3), [sendResponse] {
+        sendResponse(503, "application/json",
+                     "{\"ok\":false,\"msg\":\"Logout unavailable\"}");
+      })) {
+    sendResponse(503, "application/json",
+                 "{\"ok\":false,\"msg\":\"Logout unavailable\"}");
   }
 }
 

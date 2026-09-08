@@ -143,7 +143,7 @@ MessageAppendResult InMemoryChatRepository::AppendOrGet(
   if (sender != impl_->messagesByClientId.end()) {
     const auto existing = sender->second.find(clientKey);
     if (existing != sender->second.end()) {
-      return {existing->second, false};
+      return {ChatServiceError::kNone, existing->second, false};
     }
   }
 
@@ -152,7 +152,7 @@ MessageAppendResult InMemoryChatRepository::AppendOrGet(
                   std::string(content), UtcTimestamp()};
   impl_->messages[message.roomId].push_back(message);
   impl_->messagesByClientId[senderKey].emplace(clientKey, message);
-  return {std::move(message), true};
+  return {ChatServiceError::kNone, std::move(message), true};
 }
 
 std::vector<Message> InMemoryChatRepository::ListBefore(

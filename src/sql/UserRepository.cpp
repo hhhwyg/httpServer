@@ -39,19 +39,20 @@ class MysqlUserRepository final : public UserRepository {
  public:
   bool available() const override { return SqlConnPool::Instance()->IsInitialized(); }
 
-  bool create(std::string_view username, std::string_view passwordHash) override {
+  UserCreateResult create(std::string_view username,
+                          std::string_view passwordHash) override {
     MYSQL* sql = nullptr;
     SqlConnRAII connection(&sql, SqlConnPool::Instance());
     if (!sql) {
-      return false;
+      return UserCreateResult::kUnavailable;
     }
 
     MysqlStatement statement(sql);
     constexpr char kInsert[] =
-        "INSERT INTO `user` (username, passwd) VALUES (?, ?)";
+        "INSERT INTO users (username, password_hash) VALUES (?, ?)";
     if (!statement.get() || mysql_stmt_prepare(statement.get(), kInsert,
                                                 sizeof(kInsert) - 1) != 0) {
-      return false;
+      return UserCreateResult::kUnavailable;
     }
 
     MYSQL_BIND parameters[2]{};
@@ -59,8 +60,15 @@ class MysqlUserRepository final : public UserRepository {
     unsigned long passwordHashLength = 0;
     bindString(&parameters[0], username, &usernameLength);
     bindString(&parameters[1], passwordHash, &passwordHashLength);
-    return mysql_stmt_bind_param(statement.get(), parameters) == 0 &&
-           mysql_stmt_execute(statement.get()) == 0;
+    if (mysql_stmt_bind_param(statement.get(), parameters) != 0) {
+      return UserCreateResult::kUnavailable;
+    }
+    if (mysql_stmt_execute(statement.get()) == 0) {
+      return UserCreateResult::kCreated;
+    }
+    return mysql_stmt_errno(statement.get()) == 1062
+               ? UserCreateResult::kAlreadyExists
+               : UserCreateResult::kUnavailable;
   }
 
   std::optional<std::string> passwordHashFor(std::string_view username) override {
@@ -72,7 +80,7 @@ class MysqlUserRepository final : public UserRepository {
 
     MysqlStatement statement(sql);
     constexpr char kSelect[] =
-        "SELECT passwd FROM `user` WHERE username = ? LIMIT 1";
+        "SELECT password_hash FROM users WHERE username = ? LIMIT 1";
     if (!statement.get() || mysql_stmt_prepare(statement.get(), kSelect,
                                                 sizeof(kSelect) - 1) != 0) {
       return std::nullopt;
@@ -109,11 +117,12 @@ class InMemoryUserRepository final : public UserRepository {
  public:
   bool available() const override { return true; }
 
-  bool create(std::string_view username,
-              std::string_view passwordHash) override {
+  UserCreateResult create(std::string_view username,
+                          std::string_view passwordHash) override {
     std::lock_guard<std::mutex> lock(mutex_);
-    return users_.emplace(std::string(username), std::string(passwordHash))
-        .second;
+    return users_.emplace(std::string(username), std::string(passwordHash)).second
+               ? UserCreateResult::kCreated
+               : UserCreateResult::kAlreadyExists;
   }
 
   std::optional<std::string> passwordHashFor(

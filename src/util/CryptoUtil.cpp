@@ -134,8 +134,8 @@ bool deriveScrypt(const std::string& password,
                          kScryptMaxMemory, output->data(), output->size()) == 1;
 }
 
-std::optional<std::string> verifiedUsername(const std::string& token,
-                                             const JwtConfig& config) {
+std::optional<JwtClaims> verifiedClaims(const std::string& token,
+                                        const JwtConfig& config) {
   if (!config.enabled() || token.empty() || token.size() > kJwtMaxLength) {
     return std::nullopt;
   }
@@ -168,6 +168,7 @@ std::optional<std::string> verifiedUsername(const std::string& token,
         header.value("typ", "") != "JWT" ||
         payload.value("iss", "") != config.issuer ||
         !payload.contains("sub") || !payload["sub"].is_string() ||
+        !payload.contains("jti") || !payload["jti"].is_string() ||
         !payload.contains("iat") || !payload["iat"].is_number_integer() ||
         !payload.contains("exp") || !payload["exp"].is_number_integer()) {
       return std::nullopt;
@@ -183,7 +184,12 @@ std::optional<std::string> verifiedUsername(const std::string& token,
       return std::nullopt;
     }
     const std::string username = payload["sub"].get<std::string>();
-    return username.empty() ? std::nullopt : std::optional<std::string>(username);
+    const std::string jti = payload["jti"].get<std::string>();
+    if (username.empty() || jti.size() < 16 || jti.size() > 64 ||
+        !isBase64Url(jti)) {
+      return std::nullopt;
+    }
+    return JwtClaims{username, jti, expiresAt};
   } catch (const std::exception&) {
     return std::nullopt;
   }
@@ -248,9 +254,15 @@ std::string generateJWT(const std::string& username) {
   const std::int64_t now = std::chrono::duration_cast<std::chrono::seconds>(
                                std::chrono::system_clock::now().time_since_epoch())
                                .count();
+  std::array<unsigned char, 16> randomJti{};
+  if (RAND_bytes(randomJti.data(), randomJti.size()) != 1) return {};
+  const std::string jti = base64UrlEncode(
+      std::string(reinterpret_cast<const char*>(randomJti.data()), randomJti.size()));
+  if (jti.empty()) return {};
   const json header = {{"alg", "HS256"}, {"typ", "JWT"}};
   const json payload = {{"sub", username},
                         {"iss", config.issuer},
+                        {"jti", jti},
                         {"iat", now},
                         {"exp", now + config.ttlSeconds}};
   const std::string signingInput = base64UrlEncode(header.dump()) + "." +
@@ -260,8 +272,14 @@ std::string generateJWT(const std::string& username) {
   return signature.empty() ? std::string{} : signingInput + "." + signature;
 }
 
+std::optional<JwtClaims> verifyAndExtractClaims(const std::string& token) {
+  return verifiedClaims(token, configuredJwt());
+}
+
 std::optional<std::string> verifyAndExtractUsername(const std::string& token) {
-  return verifiedUsername(token, configuredJwt());
+  const auto claims = verifyAndExtractClaims(token);
+  return claims.has_value() ? std::optional<std::string>(claims->username)
+                            : std::nullopt;
 }
 
 bool verifyJWT(const std::string& token) {

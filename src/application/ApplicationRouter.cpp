@@ -131,6 +131,16 @@ RouteResult ApplicationRouter::Dispatch(const ApplicationRequest& request,
     return RouteResult::kHandled;
   }
 
+  if (request.method == "POST" && request.path == "/logout") {
+    const auto token = Authenticator::VerifyClaims(request.query, request.headers);
+    if (!token.has_value()) {
+      SendUnauthorized(request, sendResponse);
+    } else {
+      UserController::handleLogout(*token, sendResponse);
+    }
+    return RouteResult::kHandled;
+  }
+
   const auto memberRoute = MatchRoomMemberRoute(request.path);
   const bool requiresAuthentication =
       IsProtectedRoomRoute(request, memberRoute);

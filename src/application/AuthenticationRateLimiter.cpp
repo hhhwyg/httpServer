@@ -6,6 +6,8 @@
 #include <string>
 #include <unordered_map>
 
+#include "httpserver/application/RedisClient.h"
+
 namespace httpserver {
 namespace {
 
@@ -55,6 +57,40 @@ bool AuthenticationRateLimiter::Allow(std::string_view identity) {
   if (static_cast<int>(attempts.size()) >= rateLimit.maxAttempts) {
     return false;
   }
+  attempts.push_back(now);
+  return true;
+}
+
+bool AuthenticationRateLimiter::AllowDistributed(std::string_view scope,
+                                                  std::string_view identity,
+                                                  int maxAttemptsOverride,
+                                                  int windowSecondsOverride) {
+  if (scope.empty() || identity.empty()) return false;
+  RateLimitState& rateLimit = state();
+  int maxAttempts = 0;
+  int windowSeconds = 0;
+  {
+    std::lock_guard<std::mutex> lock(rateLimit.mutex);
+    maxAttempts = rateLimit.maxAttempts;
+    windowSeconds = rateLimit.windowSeconds;
+  }
+  if (maxAttemptsOverride > 0) maxAttempts = maxAttemptsOverride;
+  if (windowSecondsOverride > 0) windowSeconds = windowSecondsOverride;
+  const RedisRateLimitResult redis = RedisService::AllowRateLimit(
+      scope, identity, maxAttempts, windowSeconds);
+  if (redis == RedisRateLimitResult::kAllowed) return true;
+  if (redis == RedisRateLimitResult::kLimited) return false;
+  if (maxAttemptsOverride == 0 && windowSecondsOverride == 0) {
+    return Allow(std::string(scope) + ':' + std::string(identity));
+  }
+  RateLimitState& fallback = state();
+  const Clock::time_point now = Clock::now();
+  std::lock_guard<std::mutex> lock(fallback.mutex);
+  const Clock::time_point cutoff = now - std::chrono::seconds(windowSeconds);
+  auto& attempts = fallback.attempts[std::string(scope) + ':' +
+                                     std::string(identity)];
+  discardExpired(&attempts, cutoff);
+  if (static_cast<int>(attempts.size()) >= maxAttempts) return false;
   attempts.push_back(now);
   return true;
 }

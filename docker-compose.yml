@@ -9,6 +9,8 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       HTTPSERVER_JWT_SECRET: local-development-secret-change-me-please
       HTTPSERVER_DB_HOST: mysql
@@ -16,6 +18,9 @@ services:
       HTTPSERVER_DB_USER: httpserver
       HTTPSERVER_DB_PASSWORD: local-development-password
       HTTPSERVER_DB_NAME: webserver
+      HTTPSERVER_REDIS_HOST: redis
+      HTTPSERVER_REDIS_PORT: 6379
+      HTTPSERVER_INSTANCE_ID: builder-local
       HTTPSERVER_MAX_FDS: 100000
       HTTPSERVER_IO_URING_QUEUE_SIZE: 4096
     command: >-
@@ -35,11 +40,21 @@ services:
       - "3306:3306"
     volumes:
       - mysql-data:/var/lib/mysql
-      - ./tests/integration/mysql-init.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 5s
       timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7.4-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
       retries: 20
 
 volumes:
