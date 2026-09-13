@@ -6,6 +6,7 @@
 #include <functional>
 #include <mutex>
 #include <netinet/in.h>
+#include <optional>
 #include <string_view>
 #include <vector>
 #include <sys/socket.h>
@@ -60,6 +61,37 @@ std::vector<std::weak_ptr<HttpData>> liveConnections;
 std::mutex webSocketOriginsMutex;
 std::vector<std::string> webSocketAllowedOrigins;
 bool webSocketOriginRequired = false;
+constexpr int kWebSocketConnectionsPerUserPerMinute = 120;
+constexpr int kWebSocketConnectionsPerIpPerMinute = 2000;
+constexpr std::string_view kWebSocketProtocol = "httpserver.v1";
+constexpr std::string_view kWebSocketBearerPrefix = "bearer.";
+
+struct WebSocketProtocols {
+  bool applicationProtocol = false;
+  std::optional<std::string> bearerToken;
+};
+
+WebSocketProtocols parseWebSocketProtocols(const httpserver::HeaderMap& headers) {
+  WebSocketProtocols result;
+  const auto protocols = headers.find("sec-websocket-protocol");
+  if (protocols == headers.end()) return result;
+  std::string_view value = protocols->second;
+  while (!value.empty()) {
+    const std::size_t comma = value.find(',');
+    std::string_view item = value.substr(0, comma);
+    while (!item.empty() && item.front() == ' ') item.remove_prefix(1);
+    while (!item.empty() && item.back() == ' ') item.remove_suffix(1);
+    if (item == kWebSocketProtocol) result.applicationProtocol = true;
+    if (!result.bearerToken.has_value() &&
+        item.size() > kWebSocketBearerPrefix.size() &&
+        item.substr(0, kWebSocketBearerPrefix.size()) == kWebSocketBearerPrefix) {
+      result.bearerToken = std::string(item.substr(kWebSocketBearerPrefix.size()));
+    }
+    if (comma == std::string_view::npos) break;
+    value.remove_prefix(comma + 1);
+  }
+  return result;
+}
 
 std::string toLower(std::string value) {
   std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
@@ -928,15 +960,22 @@ AnalysisState HttpData::handleWebSocketHandshake() {
 
     // 3. JWT authentication. Authorization is preferred; query support is
     // retained for old clients and must be disabled at the public proxy.
-    const auto username = httpserver::Authenticator::VerifyRequest(query_, headers_);
+    httpserver::HeaderMap authenticationHeaders = headers_;
+    const WebSocketProtocols protocols = parseWebSocketProtocols(headers_);
+    if (protocols.bearerToken.has_value()) {
+      authenticationHeaders["authorization"] = "Bearer " + *protocols.bearerToken;
+    }
+    const auto username =
+        httpserver::Authenticator::VerifyRequest(query_, authenticationHeaders);
     if (!username.has_value()) {
         handleError(fd_, 401, "Unauthorized");
         return ANALYSIS_ERROR;
     }
-    const bool userAllowed =
-        httpserver::AuthenticationRateLimiter::Allow("websocket:user:" + *username);
+    const bool userAllowed = httpserver::AuthenticationRateLimiter::Allow(
+        "websocket:user:" + *username, kWebSocketConnectionsPerUserPerMinute, 60);
     const bool ipAllowed = peerAddress_.empty() ||
-        httpserver::AuthenticationRateLimiter::Allow("websocket:ip:" + peerAddress_);
+        httpserver::AuthenticationRateLimiter::Allow(
+            "websocket:ip:" + peerAddress_, kWebSocketConnectionsPerIpPerMinute, 60);
     if (!userAllowed || !ipAllowed) {
         handleError(fd_, 429, "Too Many Requests");
         return ANALYSIS_ERROR;
@@ -958,6 +997,9 @@ AnalysisState HttpData::handleWebSocketHandshake() {
     header += "Upgrade: websocket\r\n";
     header += "Connection: Upgrade\r\n";
     header += "Sec-WebSocket-Accept: " + acceptKey + "\r\n";
+    if (protocols.applicationProtocol) {
+      header += "Sec-WebSocket-Protocol: " + std::string(kWebSocketProtocol) + "\r\n";
+    }
     header += "\r\n";
 
     recordHttpResponse(101);

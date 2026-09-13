@@ -25,6 +25,9 @@
 /*.profdata
 /coverage/
 /benchmarks/
+/backups/
+__pycache__/
+*.py[cod]
 
 # Local configuration and credentials
 /.env

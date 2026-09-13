@@ -85,9 +85,9 @@ python3 tests/observability/MetricsScenarioTest.py
 
 ## 实施结果与验收
 
-HTTP 指标采用固定方法、归一化路由和状态类别；请求与 WebSocket 广播延迟提供固定 bucket、`sum`、`count`。数据库执行器、Redis、Outbox、输出背压与慢消费者均由 `/metrics` 暴露，避免使用任意业务 ID 作为 label。结构化日志包含实例、请求/连接/事件关联 ID、操作、耗时和错误码，且不记录敏感字段。
+HTTP 指标采用固定方法、归一化路由和状态类别；请求与 WebSocket 广播延迟提供固定 bucket、`sum`、`count`。数据库执行器、Redis、Outbox、输出背压与慢消费者均由 `/metrics` 暴露，避免使用任意业务 ID 作为 label。结构化日志包含实例、请求/连接/事件关联 ID、消息 ID、操作、耗时和错误码，且不记录敏感字段。实际公网入口 smoke 中，同一条消息通过 `request_id`、`event_id`、`message_id` 关联到两个实例的 `websocket.broadcast` 和发布实例的 `outbox.publish`。
 
-`deploy/prometheus/` 包含 scrape 与六条持续告警规则，`deploy/grafana/` 预置流量与延迟、WebSocket、依赖、Outbox/资源四个 dashboard row。真实 Compose 验收结果：Prometheus `/-/ready` 成功，Grafana `/api/health` 返回 `database: ok`，`/api/v1/targets` 中 `webserver:8088` 状态为 `up`；`promtool check config` 与 `promtool check rules` 均通过。
+`deploy/prometheus/` 包含 scrape 与六条持续告警规则，`deploy/grafana/` 预置流量与延迟、WebSocket、依赖、Outbox/资源四个 dashboard row。真实 production Compose 验收结果：Prometheus 中 `webserver-a`、`webserver-b` 与 node exporter 三个目标均为 `up`，Grafana `/api/health` 返回 `database: ok`，Alertmanager readiness 返回 `OK`；`promtool check config` 与 `promtool check rules` 均通过。
 
 ```bash
 ctest --test-dir build/debug -R 'application.metrics|observability.metrics_scenario' --output-on-failure

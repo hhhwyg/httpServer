@@ -70,6 +70,8 @@ tests/benchmark/run_soak_test.sh deploy/benchmark/scenario-soak-24h.env
 tests/resilience/run_fault_matrix.sh
 ```
 
+双实例压测前先以 `set -a; source deploy/benchmark/scenario-cross-instance.env; set +a` 加载场景，再启动 `docker-compose.scale.yml`；这样压测专用消息阈值会透传到两个应用实例。场景文件不包含 JWT、MySQL 等密钥，密钥仍须通过部署环境单独提供。
+
 完成标准不是预设一个虚构 QPS，而是：所有成功率和延迟均有原始数据；零遗漏/重复要求经过客户端消息 ID 校验；24 小时内 RSS、fd 和线程数没有持续单调增长；故障矩阵每一项都有预期用户结果、实际结果、恢复时间和对应指标；同版本单实例与双实例结果可复现。
 
 简历中的连接数、消息吞吐、p99、错误率和运行时长必须逐项能定位到某个结果文件和 Git commit。
@@ -84,6 +86,10 @@ tests/resilience/run_fault_matrix.sh
 
 ## 实施结果与验收
 
+2026-09-12 补验：压测器修复远端 URL/TLS、失败退出、长时客户端内存与资源采样；17 项回归通过。浏览器回归覆盖桌面/移动布局、中文输入、草稿、断线恢复、ACK 丢失、订阅重试与跨账号隔离，已接入 CI。当前业务压测仍是单消息在途的闭环多房间轮询，不代表独立发送者并发容量；还需补充该负载及目标机长时证据。详见 [本轮复验记录](Acceptance_2026-09-12.md)。
+
 `scripts/validate_linux.sh` 继续提供 Debug/ASan/TSan 构建入口；`tests/resilience/run_fault_matrix.sh` 聚合慢客户端、优雅排空和 shutdown，Toxiproxy 通过 `HTTPSERVER_RUN_TOXIPROXY=1` 显式启用。`tests/benchmark/run_websocket_benchmark.py` 验证真实 WebSocket upgrade 和 masked ping/pong；业务模式由 `run_chat_benchmark.py` 创建 V1 房间、加入可配置数量的接收者，并逐条校验 ACK 与所有 `clientMessageId`。`run_websocket_benchmark.sh` 按 `deploy/benchmark/*.env` 保存原始结果。`run_soak_test.sh` 需要 `HTTPSERVER_ALLOW_LONG_SOAK=1`，避免误执行 24 小时任务。
 
-短时 smoke 在本机 Debug、epoll、2 条持久 WebSocket、1 秒窗口下得到 `successful_handshake_ping=6414`、`errors=0`、`p99=0.668ms`。这仅验证基准客户端和协议路径，不能与 `docs/Performance_Analysis.md` 的 Release HTTP 基线混用，也不是容量承诺。发布前必须在目标机用 30 分钟场景和 24 小时场景生成 Git SHA 对应 artifact，并依据消息 ID 校验遗漏/重复。
+业务压测器现支持房间数、每房间 fanout、消息大小、真实 API/fixture 认证、服务 PID 资源采样，并输出 ACK、预期/实际投递、遗漏、重复、乱序、协议错误及 p50/p95/p99。跨实例场景使用独立的发送端口和接收端口，将发送者固定在实例 A、接收者固定在实例 B，避免仅凭场景名称误判 Redis 跨节点路径已被覆盖。场景包装脚本同时记录 Git SHA、主机、内核、CPU、内存、fd 上限、后端、服务线程和客户端位置。`ReconnectRecoveryTest.py` 可通过 `HTTPSERVER_RECOVERY_MESSAGE_COUNT=1000` 验证 10 页完整补拉。
+
+本机 Release/epoll 的短时边界结果为：100、500、1000 fanout 分别完成 18,600、30,500、35,000 次已校验投递，全部零遗漏/重复/乱序，p99 分别为 7.708ms、25.930ms、43.165ms；4 房间各 25 fanout、1024B 消息完成 30,575 次投递，p99 为 2.341ms。另以 Compose 双实例执行强制跨节点短测，发送者固定实例 A、20 个接收连接固定实例 B，90/90 次投递且遗漏、重复、乱序和协议错误均为 0。窗口仅 1-2 秒且客户端同机，只用于验收工具和 fanout 正确性。发布前仍必须在目标机执行三轮 30 分钟对照与 24 小时长稳，并生成 Git tag 对应 artifact。

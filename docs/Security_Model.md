@@ -26,11 +26,11 @@ scrypt$v1$32768$8$1$<base64url-salt>$<base64url-derived-key>
 
 JWT 固定使用 HS256，payload 包含 `sub`、`jti`、`iss`、`iat` 和 `exp`。验证时检查：三段结构、Base64URL 字符集、签名、算法、issuer、签发时间、过期时间、最大长度和 `jti` 格式。签名比较使用 `CRYPTO_memcmp`。`POST /logout` 把 `jti` 按剩余有效期写入 Redis denylist；Redis 已配置但 denylist 无法读取时，受保护请求 fail-closed。
 
-WebSocket 只接受完整 token 校验成功的主体，避免出现“先解码用户名、后遗漏验证”的调用路径。公网 Nginx 仅接受 `Authorization: Bearer`，拒绝 URL query token，并在 Nginx 和应用中校验 `HTTPSERVER_WS_ALLOWED_ORIGINS` 的 HTTPS Origin 白名单。直接本地开发为了兼容测试客户端可不配置白名单，不得作为公网配置。
+WebSocket 只接受完整 token 校验成功的主体，避免出现“先解码用户名、后遗漏验证”的调用路径。脚本客户端可使用 `Authorization: Bearer`；浏览器原生 WebSocket 无法设置该请求头，因此页面通过 `Sec-WebSocket-Protocol: httpserver.v1, bearer.<JWT>` 发送凭据，服务端只回显非敏感的 `httpserver.v1`，不在响应中反射 token。公网 Nginx 拒绝 URL query token，并在 Nginx 和应用中校验 `HTTPSERVER_WS_ALLOWED_ORIGINS` 的 HTTPS Origin 白名单。直接本地开发为了兼容旧测试客户端仍支持 query token，不得作为公网调用方式。
 
 ## 认证限流
 
-登录、注册、建房、发消息按主体或 IP 执行 Redis Lua 窗口限流；WebSocket 握手保留本地主体/IP 限流并叠加 Nginx 入口限流。默认认证维度 60 秒内最多 10 次；`HTTPSERVER_AUTH_MAX_ATTEMPTS` 和 `HTTPSERVER_AUTH_WINDOW_SECONDS` 可调整。该地址来自 socket，不信任客户端可伪造的转发头；部署在反向代理之后由 Nginx 对真实公网连接限流。
+登录、注册、建房、发消息按主体或 IP 执行 Redis Lua 窗口限流；WebSocket 握手保留独立的本地主体/IP 重连限流并叠加 Nginx 入口限流。登录失败默认 60 秒内最多 10 次；已验证 JWT 的 WebSocket 建连允许每用户 120 次/分钟、每 socket 对端 IP 2000 次/分钟，避免把共享 NAT 下的正常连接误判为密码爆破。`HTTPSERVER_AUTH_MAX_ATTEMPTS` 和 `HTTPSERVER_AUTH_WINDOW_SECONDS` 只调整认证尝试。部署在反向代理之后由 Nginx 对真实公网连接继续执行更严格的连接与请求限流。
 
 ## 数据库
 

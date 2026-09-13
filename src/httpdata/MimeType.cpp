@@ -14,6 +14,8 @@ void initializeMimeTypes() {
   mime[".bmp"] = "image/bmp";
   mime[".c"] = "text/plain";
   mime[".css"] = "text/css";
+  mime[".svg"] = "image/svg+xml";
+  mime[".woff2"] = "font/woff2";
   mime[".js"] = "application/javascript";
   mime[".json"] = "application/json";
   mime[".doc"] = "application/msword";

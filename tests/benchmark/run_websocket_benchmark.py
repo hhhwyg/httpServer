@@ -1,87 +1,125 @@
 #!/usr/bin/env python3
-"""Dependency-free WebSocket handshake/ping load probe with raw results."""
+"""Bounded-memory WebSocket handshake/ping load probe with strict failure exit."""
 import argparse
 import asyncio
-import base64
-import hashlib
-import hmac
-import json
 import math
 import os
 import time
-from urllib.parse import urlsplit
+
+from benchmark_common import (
+    Endpoint, LatencyHistogram, add_transport_arguments, handshake_request,
+    make_token, tls_context, validate_handshake,
+)
+from run_chat_benchmark import ResourceSampler, parse_pids
 
 
-def token(secret):
-    now = int(time.time())
-    encode = lambda value: base64.urlsafe_b64encode(value).rstrip(b"=").decode()
-    header = encode(b'{"alg":"HS256","typ":"JWT"}')
-    payload = encode(json.dumps({"sub": "benchmark-user", "iss": "httpServer",
-        "jti": encode(os.urandom(16)), "iat": now, "exp": now + 3600},
-        separators=(",", ":")).encode())
-    signature = encode(hmac.new(secret.encode(), f"{header}.{payload}".encode(), hashlib.sha256).digest())
-    return f"{header}.{payload}.{signature}"
-
-
-def percentile(values, fraction):
-    if not values: return 0.0
-    values.sort()
-    return values[min(len(values) - 1, math.ceil(len(values) * fraction) - 1)]
-
-
-async def worker(host, port, path, auth_token, deadline):
-    ok = errors = 0
-    latencies = []
-    request = (f"GET {path} HTTP/1.1\r\nHost: {host}\r\nAuthorization: Bearer {auth_token}\r\n"
-        "Origin: https://chat.example.test\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
-        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n").encode()
+async def worker(endpoint, auth_token, args, context, ready, go, histogram):
     writer = None
+    ok, connected, error = 0, False, None
     try:
-        reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port), 2)
-        writer.write(request); await writer.drain()
-        response = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 2)
-        if b"101 Switching Protocols" not in response: raise ValueError("upgrade rejected")
-        while time.monotonic() < deadline:
+        reader, writer = await asyncio.wait_for(asyncio.open_connection(
+            endpoint.host, endpoint.port, ssl=context if endpoint.secure else None,
+            server_hostname=endpoint.host if endpoint.secure else None), args.timeout)
+        request, key = handshake_request(endpoint, auth_token, args.origin)
+        writer.write(request)
+        await writer.drain()
+        response = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), args.timeout)
+        validate_handshake(response, key, auth_token)
+        connected = True
+    except (OSError, AssertionError, ValueError, asyncio.TimeoutError,
+            asyncio.IncompleteReadError, asyncio.LimitOverrunError) as failure:
+        error = str(failure)
+    finally:
+        await ready.put(connected)
+    try:
+        await go.wait()
+        while connected and time.monotonic() < args.deadline:
             started = time.perf_counter_ns()
-            writer.write(b"\x89\x81\x01\x02\x03\x04\x79"); await writer.drain()
-            pong = await asyncio.wait_for(reader.readexactly(3), 2)
-            if pong[:2] != b"\x8a\x01" or pong[2:] != b"x": raise ValueError("invalid pong")
-            latencies.append((time.perf_counter_ns() - started) / 1_000_000); ok += 1
-    except (OSError, ValueError, asyncio.TimeoutError, asyncio.IncompleteReadError):
-        errors += 1
+            writer.write(b"\x89\x81\x01\x02\x03\x04\x79")
+            await writer.drain()
+            pong = await asyncio.wait_for(reader.readexactly(3), args.timeout)
+            if pong != b"\x8a\x01x":
+                raise ValueError("invalid pong")
+            histogram.add((time.perf_counter_ns() - started) / 1_000_000)
+            ok += 1
+    except (OSError, ValueError, asyncio.TimeoutError, asyncio.IncompleteReadError) as failure:
+        error = str(failure)
     finally:
         if writer:
             writer.close()
-            try: await writer.wait_closed()
-            except OSError: pass
-    return ok, errors, latencies
+            try:
+                await asyncio.wait_for(writer.wait_closed(), args.timeout)
+            except (OSError, asyncio.TimeoutError):
+                pass
+    return ok, connected, error
 
 
-async def run_workers(host, port, path, secret, deadline, connections):
-    return await asyncio.gather(*[
-        worker(host, port, path, token(secret), deadline)
-        for _ in range(connections)
-    ])
+async def run_workers(endpoint, args, context, histogram, sampler):
+    ready, go = asyncio.Queue(), asyncio.Event()
+    run_id = os.urandom(6).hex()
+    tasks = [asyncio.create_task(worker(endpoint,
+        make_token(args.jwt_secret, f"bp-{run_id}-{index}", math.ceil(args.duration) + 3600),
+        args, context, ready, go, histogram)) for index in range(args.connections)]
+    established = [await ready.get() for _ in tasks]
+    started = time.monotonic()
+    args.deadline = started + args.duration if all(established) else started
+    sampler.start()
+    go.set()
+    try:
+        results = await asyncio.gather(*tasks)
+    finally:
+        sampler.stop()
+    return results, time.monotonic() - started
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--url", required=True); parser.add_argument("--duration", type=float, required=True)
-    parser.add_argument("--connections", type=int, required=True); parser.add_argument("--jwt-secret", required=True)
+    parser.add_argument("--url", required=True)
+    parser.add_argument("--duration", type=float, required=True)
+    parser.add_argument("--connections", type=int, required=True)
+    parser.add_argument("--jwt-secret", default=os.environ.get("HTTPSERVER_BENCH_JWT_SECRET"))
+    parser.add_argument("--server-pids", type=parse_pids, default=[])
+    parser.add_argument("--resource-output")
+    parser.add_argument("--sample-interval", type=float, default=5)
+    add_transport_arguments(parser)
     args = parser.parse_args()
-    target = urlsplit(args.url)
-    if target.scheme not in ("ws", "http") or not target.hostname or args.duration <= 0 or args.connections <= 0:
-        parser.error("url must be ws:// or http:// and duration/connections must be positive")
-    started = time.monotonic(); deadline = started + args.duration
-    results = asyncio.run(run_workers(target.hostname, target.port or 80,
-                                      target.path or "/ws", args.jwt_secret,
-                                      deadline, args.connections))
-    elapsed = time.monotonic() - started; ok = sum(r[0] for r in results); errors = sum(r[1] for r in results)
-    latencies = [value for r in results for value in r[2]]
-    print("tool=python-asyncio-websocket-benchmark"); print(f"duration_seconds={elapsed:.3f}")
-    print(f"connections={args.connections}"); print(f"successful_handshake_ping={ok}"); print(f"errors={errors}")
-    print(f"operations_per_second={ok / elapsed:.2f}"); print(f"latency_p50_ms={percentile(latencies,.5):.3f}")
-    print(f"latency_p95_ms={percentile(latencies,.95):.3f}"); print(f"latency_p99_ms={percentile(latencies,.99):.3f}")
+    if any(not math.isfinite(value) or value <= 0 for value in
+           (args.duration, args.timeout, args.sample_interval)) or args.connections <= 0:
+        parser.error("duration, connections, sample-interval and timeout must be finite and positive")
+    if not args.jwt_secret:
+        parser.error("ping fixture auth requires HTTPSERVER_BENCH_JWT_SECRET or --jwt-secret")
+    try:
+        endpoint = Endpoint.parse(args.url)
+        context = tls_context(args.ca_file, args.insecure)
+    except ValueError as error:
+        parser.error(str(error))
+    histogram = LatencyHistogram()
+    sampler = ResourceSampler(args.server_pids, args.resource_output, args.sample_interval)
+    results, elapsed = asyncio.run(run_workers(endpoint, args, context, histogram, sampler))
+    ok = sum(result[0] for result in results)
+    connected = sum(result[1] for result in results)
+    errors = sum(result[2] is not None for result in results)
+    passed = connected == args.connections and ok > 0 and not errors and sampler.valid
+    print("tool=python-asyncio-websocket-benchmark")
+    print(f"url={endpoint.url}")
+    print(f"tls_verification={'disabled-local-only' if args.insecure else 'enabled'}")
+    print(f"duration_requested_seconds={args.duration}")
+    print(f"duration_seconds={elapsed:.3f}")
+    print(f"connections={args.connections}")
+    print(f"successful_handshakes={connected}")
+    print(f"successful_handshake_ping={ok}")
+    print(f"errors={errors}")
+    if errors:
+        print(f"first_error={next(result[2] for result in results if result[2] is not None)}")
+    print(f"operations_per_second={ok / elapsed:.2f}")
+    print("latency_method=logarithmic_histogram_upper_bound_1pct")
+    for name, fraction in (("p50", .5), ("p95", .95), ("p99", .99)):
+        print(f"latency_{name}_ms={histogram.percentile(fraction):.3f}")
+    sampler.print_results(elapsed)
+    print(f"benchmark_result={'passed' if passed else 'failed'}")
+    if not passed:
+        raise SystemExit(1)
 
 
-if __name__ == "__main__": main()
+if __name__ == "__main__":
+    main()

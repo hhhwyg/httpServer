@@ -11,6 +11,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-24.04
@@ -34,5 +38,14 @@ jobs:
           IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
           [[ "$IMAGE_TAG" =~ ^[0-9a-f]{40}$ ]]
-          ssh "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "cd /opt/httpserver && IMAGE_TAG=${IMAGE_TAG} scripts/deploy_release.sh"
+          ssh "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$IMAGE_TAG" <<'REMOTE'
+          set -euo pipefail
+          image_tag=$1
+          cd /opt/httpserver
+          # Refuse a modified server checkout before selecting release migrations.
+          git diff --quiet
+          git diff --cached --quiet
+          git fetch --no-tags origin "$image_tag"
+          git checkout --detach "$image_tag"
+          IMAGE_TAG="$image_tag" scripts/deploy_release.sh
+          REMOTE

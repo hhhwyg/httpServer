@@ -96,8 +96,9 @@ def connect_wss(parsed, token, origin, context):
         "Connection: Upgrade\r\n"
         f"Sec-WebSocket-Key: {key}\r\n"
         "Sec-WebSocket-Version: 13\r\n"
+        f"Sec-WebSocket-Protocol: httpserver.v1, bearer.{token}\r\n"
         f"Origin: {origin}\r\n"
-        f"Authorization: Bearer {token}\r\n\r\n"
+        "\r\n"
     )
     connection.sendall(request.encode("ascii"))
     response = recv_until(connection, b"\r\n\r\n")
@@ -110,6 +111,10 @@ def connect_wss(parsed, token, origin, context):
     headers = response.lower()
     if b"sec-websocket-accept: " + expected.lower() not in headers:
         raise AssertionError("WSS upgrade returned an invalid accept key")
+    if b"sec-websocket-protocol: httpserver.v1" not in headers:
+        raise AssertionError("WSS upgrade did not select the application subprotocol")
+    if token.encode() in response:
+        raise AssertionError("WSS upgrade reflected the bearer token")
     return connection
 
 

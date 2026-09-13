@@ -19,6 +19,8 @@ docker compose -f docker-compose.production.yml up -d --build
 
 服务器把 `.env` 保存为 `/opt/httpserver/.env` 且权限为 0600，至少包含 `HTTPSERVER_JWT_SECRET`、`HTTPSERVER_DB_PASSWORD`、`MYSQL_ROOT_PASSWORD`、`HTTPSERVER_GRAFANA_ADMIN_PASSWORD`、`HTTPSERVER_PUBLIC_ORIGIN` 与 `HTTPSERVER_IMAGE_REPOSITORY`。防火墙/安全组只开放 22（限制来源）、80、443；Prometheus/Grafana 不发布主机端口，只能经 SSH 隧道或额外受控管理入口访问。发布不可使用 `latest`：tag 工作流会生成 commit SHA 镜像，受保护的 `deploy-production` 工作流在服务器执行 `scripts/deploy_release.sh`，依次完成依赖健康检查、备份、幂等迁移、双实例 readiness、Nginx 语法和可选公网 smoke；失败时恢复此前应用镜像。
 
+浏览器连接 `/ws` 时不使用 URL query token。页面把 `httpserver.v1` 和 `bearer.<JWT>` 作为 WebSocket 子协议发送，应用只选择并回显 `httpserver.v1`；`tests/e2e/PublicWssSmokeTest.py` 使用同一握手方式。命令行客户端仍可使用 `Authorization: Bearer`。因此公网验收必须执行 `PublicWssSmokeTest.py`，不能只用不受浏览器约束的自定义请求头探测 101。
+
 ## systemd
 
 `deploy/httpserver.service` 是示例单元。安装时创建 `httpserver` 系统用户、`/opt/httpserver` 程序目录、`/var/log/httpserver` 可写日志目录，并把 JWT 与数据库变量写入权限为 `0600` 的 `/etc/httpserver/httpserver.env`。

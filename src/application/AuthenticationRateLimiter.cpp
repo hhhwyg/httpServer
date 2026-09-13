@@ -25,11 +25,21 @@ RateLimitState& state() {
   return instance;
 }
 
-void discardExpired(std::deque<Clock::time_point>* attempts,
-                    Clock::time_point cutoff) {
+void discardExpired(std::deque<Clock::time_point>* attempts, Clock::time_point cutoff) {
   while (!attempts->empty() && attempts->front() <= cutoff) {
     attempts->pop_front();
   }
+}
+
+bool allowLocked(RateLimitState* rateLimit, std::string_view identity, int maxAttempts,
+                 int windowSeconds) {
+  const Clock::time_point now = Clock::now();
+  const Clock::time_point cutoff = now - std::chrono::seconds(windowSeconds);
+  auto& attempts = rateLimit->attempts[std::string(identity)];
+  discardExpired(&attempts, cutoff);
+  if (static_cast<int>(attempts.size()) >= maxAttempts) return false;
+  attempts.push_back(now);
+  return true;
 }
 
 }  // namespace
@@ -48,23 +58,21 @@ bool AuthenticationRateLimiter::Allow(std::string_view identity) {
   }
 
   RateLimitState& rateLimit = state();
-  const Clock::time_point now = Clock::now();
   std::lock_guard<std::mutex> lock(rateLimit.mutex);
-  const Clock::time_point cutoff =
-      now - std::chrono::seconds(rateLimit.windowSeconds);
-  auto& attempts = rateLimit.attempts[std::string(identity)];
-  discardExpired(&attempts, cutoff);
-  if (static_cast<int>(attempts.size()) >= rateLimit.maxAttempts) {
-    return false;
-  }
-  attempts.push_back(now);
-  return true;
+  return allowLocked(&rateLimit, identity, rateLimit.maxAttempts, rateLimit.windowSeconds);
 }
 
-bool AuthenticationRateLimiter::AllowDistributed(std::string_view scope,
-                                                  std::string_view identity,
-                                                  int maxAttemptsOverride,
-                                                  int windowSecondsOverride) {
+bool AuthenticationRateLimiter::Allow(std::string_view identity, int maxAttempts,
+                                      int windowSeconds) {
+  if (identity.empty() || maxAttempts <= 0 || windowSeconds <= 0) return false;
+  RateLimitState& rateLimit = state();
+  std::lock_guard<std::mutex> lock(rateLimit.mutex);
+  return allowLocked(&rateLimit, identity, maxAttempts, windowSeconds);
+}
+
+bool AuthenticationRateLimiter::AllowDistributed(std::string_view scope, std::string_view identity,
+                                                 int maxAttemptsOverride,
+                                                 int windowSecondsOverride) {
   if (scope.empty() || identity.empty()) return false;
   RateLimitState& rateLimit = state();
   int maxAttempts = 0;
@@ -76,8 +84,8 @@ bool AuthenticationRateLimiter::AllowDistributed(std::string_view scope,
   }
   if (maxAttemptsOverride > 0) maxAttempts = maxAttemptsOverride;
   if (windowSecondsOverride > 0) windowSeconds = windowSecondsOverride;
-  const RedisRateLimitResult redis = RedisService::AllowRateLimit(
-      scope, identity, maxAttempts, windowSeconds);
+  const RedisRateLimitResult redis =
+      RedisService::AllowRateLimit(scope, identity, maxAttempts, windowSeconds);
   if (redis == RedisRateLimitResult::kAllowed) return true;
   if (redis == RedisRateLimitResult::kLimited) return false;
   if (maxAttemptsOverride == 0 && windowSecondsOverride == 0) {
@@ -87,8 +95,7 @@ bool AuthenticationRateLimiter::AllowDistributed(std::string_view scope,
   const Clock::time_point now = Clock::now();
   std::lock_guard<std::mutex> lock(fallback.mutex);
   const Clock::time_point cutoff = now - std::chrono::seconds(windowSeconds);
-  auto& attempts = fallback.attempts[std::string(scope) + ':' +
-                                     std::string(identity)];
+  auto& attempts = fallback.attempts[std::string(scope) + ':' + std::string(identity)];
   discardExpired(&attempts, cutoff);
   if (static_cast<int>(attempts.size()) >= maxAttempts) return false;
   attempts.push_back(now);

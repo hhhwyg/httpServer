@@ -3,322 +3,66 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#10161f">
+  <meta name="theme-color" content="#f7f9f8">
   <title>澄语协作 | 实时沟通平台</title>
-  <style>
-    :root{--page:#e7edf6;--panel:#fff;--soft:#f6f8fb;--subtle:#eef2f7;--border:#dce3ec;--ink:#172235;--muted:#6c7788;--blue:#1e6fe8;--blue-dark:#175cc5;--blue-soft:#e8f1ff;--coral:#df765e;--red:#c63d4d;--green:#2d9b68;--yellow:#b7791f;--shadow:0 22px 55px rgba(29,52,83,.14)}
-    *{box-sizing:border-box}html,body{min-height:100%;margin:0}body{color:var(--ink);background:var(--page);font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;-webkit-font-smoothing:antialiased}[hidden]{display:none!important}button,input,textarea{font:inherit}button{cursor:pointer}button:disabled{cursor:not-allowed;opacity:.55}button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid rgba(30,111,232,.22);outline-offset:2px}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
-    .auth-shell{min-height:100vh;display:grid;place-items:center;padding:24px}.auth-panel{width:min(100%,440px);padding:38px;border:1px solid var(--border);border-radius:12px;background:var(--panel);box-shadow:var(--shadow)}
-    .brand{display:flex;align-items:center;gap:12px}.brand-mark{width:42px;height:42px;display:grid;place-items:center;border-radius:9px;color:#fff;background:var(--coral);font-size:22px;font-weight:800}.brand-name{font-size:20px;font-weight:750}.brand-caption{margin-top:4px;color:var(--muted);font-size:13px}
-    .auth-tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin:30px 0 22px;padding:4px;border-radius:8px;background:var(--subtle)}.auth-tab{padding:10px;border:0;border-radius:6px;color:var(--muted);background:transparent;font-weight:650}.auth-tab.active{color:var(--ink);background:var(--panel);box-shadow:0 1px 3px rgba(25,45,70,.1)}
-    .form-title{margin:0 0 6px;font-size:22px}.form-caption{margin:0 0 20px;color:var(--muted);font-size:14px}.field{display:grid;gap:7px;margin-top:16px}.field label,.room-form label{font-size:13px;font-weight:700}.field input,.room-form input{width:100%;min-height:44px;padding:0 13px;border:1px solid var(--border);border-radius:7px;color:var(--ink);background:#fff}.field input::placeholder,.room-form input::placeholder,.search-input::placeholder,.message-input::placeholder{color:#9aa5b4}.field-hint{color:var(--muted);font-size:12px;line-height:1.45}.form-message{min-height:20px;margin-top:14px;color:var(--red);font-size:13px;line-height:1.45}.form-message.success{color:var(--green)}
-    .primary-button,.secondary-button{min-height:42px;padding:0 16px;border-radius:7px;font-weight:700;transition:background .16s,border-color .16s,transform .16s}.primary-button{border:1px solid var(--blue);color:#fff;background:var(--blue)}.primary-button:hover{background:var(--blue-dark)}.primary-button:active,.secondary-button:active{transform:translateY(1px)}.secondary-button{border:1px solid var(--border);color:var(--ink);background:var(--panel)}.secondary-button:hover{border-color:#b6c1d0;background:var(--soft)}.auth-submit{width:100%;margin-top:4px}
-    .app-shell{min-height:100vh;display:grid;place-items:center;padding:22px}.chat-app{width:min(1180px,100%);height:min(800px,calc(100vh - 44px));min-height:580px;display:grid;grid-template-columns:296px minmax(0,1fr);overflow:hidden;border:1px solid var(--border);border-radius:10px;background:var(--panel);box-shadow:var(--shadow)}
-    .sidebar{min-width:0;display:flex;flex-direction:column;border-right:1px solid var(--border);background:var(--soft)}.sidebar-brand{display:flex;align-items:center;gap:10px;padding:20px 18px 12px}.sidebar-brand .brand-mark{width:32px;height:32px;border-radius:8px;font-size:17px}.sidebar-brand .brand-name{font-size:15px}.sidebar-brand .brand-caption{margin-top:2px;font-size:11px}.sidebar-top{padding:12px 18px 14px}.sidebar-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:15px}.sidebar-title-group{display:flex;align-items:center;gap:8px}.sidebar-title{font-size:16px;font-weight:800}.room-count{min-width:22px;padding:2px 6px;border-radius:10px;color:var(--blue-dark);background:var(--blue-soft);font-size:11px;font-weight:800;text-align:center}.search-wrap{position:relative}.search-icon{position:absolute;top:50%;left:12px;color:var(--muted);font-size:15px;transform:translateY(-50%);pointer-events:none}.search-input{width:100%;min-height:40px;padding:0 12px 0 34px;border:1px solid var(--border);border-radius:7px;color:var(--ink);background:#fff}
-    .icon-button{width:34px;height:34px;display:inline-grid;place-items:center;padding:0;border:1px solid var(--border);border-radius:7px;color:var(--ink);background:#fff;font-size:20px;line-height:1}.icon-button:hover{border-color:#b6c1d0;background:var(--subtle)}.sidebar-actions,.chat-actions{display:flex;align-items:center;gap:6px}.room-list{flex:1;min-height:0;overflow-y:auto;padding:4px 10px 14px}.room-item{width:100%;display:flex;align-items:center;gap:11px;padding:11px 9px;border:0;border-radius:7px;text-align:left;color:var(--ink);background:transparent}.room-item:hover{background:#e9eef5}.room-item.active{color:var(--blue-dark);background:var(--blue-soft)}.room-icon{width:38px;height:38px;flex:0 0 38px;display:grid;place-items:center;border-radius:8px;color:#506077;background:#dfe6ef;font-size:16px;font-weight:800}.room-item.active .room-icon{color:#fff;background:var(--blue)}.room-copy{min-width:0}.room-name,.room-meta{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}.room-name{font-size:14px;font-weight:750}.room-meta{margin-top:3px;color:var(--muted);font-size:12px}.room-item.active .room-meta{color:#5b7db0}.empty-state{display:grid;place-items:center;gap:8px;padding:36px 20px;color:var(--muted);text-align:center;font-size:13px}.empty-state strong{color:var(--ink);font-size:14px}
-    .sidebar-footer{display:flex;align-items:center;gap:10px;padding:14px 16px;border-top:1px solid var(--border);background:#fff}.avatar{width:34px;height:34px;flex:0 0 34px;display:grid;place-items:center;border-radius:50%;color:#fff;background:#526988;font-size:13px;font-weight:800}.user-copy{min-width:0;flex:1}.user-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:750}.user-state{margin-top:2px;color:var(--muted);font-size:11px}.logout-button{border:0;color:var(--muted);background:transparent;font-size:12px;font-weight:700}.logout-button:hover{color:var(--red)}
-    .main-chat{min-width:0;display:flex;flex-direction:column;background:#fbfcfe}.chat-header{min-height:78px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 24px;border-bottom:1px solid var(--border);background:#fff}.mobile-menu{display:none}.room-heading{min-width:0}.room-title-line{display:flex;align-items:center;gap:10px;min-width:0}.current-room-icon{width:32px;height:32px;flex:0 0 32px;display:grid;place-items:center;border-radius:8px;color:var(--blue);background:var(--blue-soft);font-size:14px;font-weight:800}.room-heading h1{margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:20px}.room-heading p{margin:6px 0 0 42px;color:var(--muted);font-size:12px}.connection-state{display:inline-flex;align-items:center;gap:8px;color:var(--muted);font-size:12px;white-space:nowrap}.status-dot{width:8px;height:8px;border-radius:50%;background:#aab4c1}.status-dot.online{background:var(--green)}.status-dot.connecting{background:var(--yellow)}.status-dot.offline{background:var(--red)}.retry-button{margin-left:4px;padding:0;border:0;color:var(--blue);background:transparent;font-size:12px;font-weight:700}
-    .message-list{flex:1;min-height:0;overflow-y:auto;padding:24px clamp(18px,4vw,48px)}.room-welcome{display:grid;place-items:center;gap:7px;min-height:100%;color:var(--muted);text-align:center}.room-welcome-mark{width:48px;height:48px;display:grid;place-items:center;border-radius:12px;color:var(--blue);background:var(--blue-soft);font-size:23px;font-weight:800}.room-welcome strong{color:var(--ink);font-size:15px}.room-welcome span{font-size:13px}.message-row{display:flex;gap:10px;margin:0 0 18px}.message-row.me{flex-direction:row-reverse}.message-avatar{width:30px;height:30px;flex-basis:30px;font-size:11px}.message-stack{max-width:min(70%,620px)}.message-row.me .message-stack{align-items:flex-end}.message-meta{display:flex;align-items:center;gap:7px;margin-bottom:5px;color:var(--muted);font-size:11px}.message-row.me .message-meta{justify-content:flex-end}.message-bubble{padding:11px 14px;border:1px solid var(--border);border-radius:9px;color:var(--ink);background:#fff;box-shadow:0 2px 5px rgba(28,49,77,.04);font-size:14px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}.message-row.me .message-bubble{border-color:var(--blue);color:#fff;background:var(--blue)}.system-message{width:fit-content;max-width:90%;margin:0 auto 18px;padding:7px 12px;border-radius:6px;color:var(--muted);background:var(--subtle);font-size:12px;text-align:center}
-    .composer{padding:14px 24px 18px;border-top:1px solid var(--border);background:#fff}.composer-row{display:flex;align-items:flex-end;gap:10px}.message-input{width:100%;min-height:44px;max-height:132px;resize:none;padding:12px 14px;border:1px solid var(--border);border-radius:8px;color:var(--ink);background:var(--soft);line-height:1.4;transition:border-color .16s,box-shadow .16s}.message-input:focus{border-color:#8eb5f0;box-shadow:0 0 0 3px rgba(30,111,232,.1)}.send-button{width:44px;height:44px;flex:0 0 44px;border:1px solid var(--blue);border-radius:8px;color:#fff;background:var(--blue);font-size:22px;line-height:1}.send-button:hover{background:var(--blue-dark)}.composer-foot{display:flex;justify-content:space-between;margin-top:7px;color:var(--muted);font-size:11px}.char-count.warning{color:var(--yellow)}.char-count.invalid{color:var(--red)}
-    .toast-region{position:fixed;z-index:20;right:22px;bottom:22px;display:grid;gap:8px;width:min(360px,calc(100vw - 44px))}.toast{padding:12px 14px;border:1px solid var(--border);border-left:4px solid var(--blue);border-radius:7px;color:var(--ink);background:#fff;box-shadow:0 10px 25px rgba(29,52,83,.15);font-size:13px;line-height:1.45}.toast.error{border-left-color:var(--red)}.toast.success{border-left-color:var(--green)}
-    dialog{width:min(420px,calc(100vw - 32px));padding:0;border:1px solid var(--border);border-radius:9px;color:var(--ink);background:var(--panel);box-shadow:var(--shadow)}dialog::backdrop{background:rgba(17,29,45,.42)}.dialog-body{padding:24px}.dialog-header{display:flex;align-items:center;justify-content:space-between;gap:12px}.dialog-header h2{margin:0;font-size:18px}.dialog-close{border:0;color:var(--muted);background:transparent;font-size:22px}.room-form{display:grid;gap:10px;margin-top:20px}.room-form-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}.mobile-scrim{display:none}
-    @media(max-width:760px){.app-shell{padding:0}.chat-app{height:100vh;min-height:0;border:0;border-radius:0;grid-template-columns:1fr}.sidebar{position:fixed;z-index:12;top:0;bottom:0;left:0;width:min(86vw,320px);transform:translateX(-102%);transition:transform .2s ease;box-shadow:12px 0 30px rgba(20,39,65,.15)}.sidebar.open{transform:translateX(0)}.mobile-scrim{position:fixed;z-index:11;inset:0;display:block;background:rgba(17,29,45,.35)}.mobile-scrim[hidden]{display:none}.mobile-menu{display:inline-grid}.chat-header{min-height:68px;padding:12px 16px}.room-heading h1{font-size:18px}.room-heading p{margin-left:42px}.connection-state{font-size:0;gap:5px}.connection-state .retry-button{font-size:12px}.message-list{padding:20px 14px}.message-stack{max-width:82%}.composer{padding:10px 14px 13px}.auth-panel{padding:28px 22px}}@media(max-width:420px){.auth-shell{padding:12px}.auth-panel{border:0;box-shadow:none}.room-heading p{display:none}}
-  </style>
-  <style>
-    :root {
-      --page: #10161f;
-      --panel: #18212d;
-      --soft: #141c27;
-      --subtle: #202b39;
-      --border: #2c3948;
-      --ink: #f2f5f8;
-      --muted: #94a3b6;
-      --blue: #e98568;
-      --blue-dark: #f09a80;
-      --blue-soft: #3c2a2b;
-      --coral: #e98568;
-      --red: #ff7171;
-      --green: #6cc494;
-      --yellow: #e8bb68;
-      --shadow: 0 28px 80px rgba(0, 0, 0, .34);
-    }
-
-    * { scrollbar-width: thin; scrollbar-color: #3b4a5b transparent; }
-    *::-webkit-scrollbar { width: 8px; height: 8px; }
-    *::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px; background: #3b4a5b; background-clip: padding-box; }
-    body {
-      min-height: 100dvh;
-      background:
-        linear-gradient(135deg, rgba(233, 133, 104, .07), transparent 30%),
-        #10161f;
-      font-family: "Segoe UI Variable", "Microsoft YaHei UI", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
-      letter-spacing: 0;
-    }
-
-    button, input, textarea { font-family: inherit; }
-    button:focus-visible, input:focus-visible, textarea:focus-visible {
-      outline: 3px solid rgba(233, 133, 104, .35);
-      outline-offset: 2px;
-    }
-
-    .auth-shell {
-      position: relative;
-      min-height: 100dvh;
-      overflow: hidden;
-      padding: 28px;
-      background:
-        radial-gradient(circle at 82% 14%, rgba(233, 133, 104, .16), transparent 22rem),
-        linear-gradient(135deg, #10161f 0%, #131c27 58%, #10161f 100%);
-    }
-    .auth-shell::before, .auth-shell::after {
-      position: absolute;
-      content: "";
-      pointer-events: none;
-    }
-    .auth-shell::before { inset: 24px; border: 1px solid rgba(255, 255, 255, .05); border-radius: 16px; }
-    .auth-shell::after { width: 34rem; height: 34rem; right: -18rem; bottom: -22rem; border: 1px solid rgba(233, 133, 104, .2); border-radius: 50%; box-shadow: 0 0 0 56px rgba(233, 133, 104, .035), 0 0 0 112px rgba(233, 133, 104, .02); }
-    .auth-panel {
-      position: relative;
-      z-index: 1;
-      width: min(100%, 460px);
-      padding: 40px;
-      border: 1px solid rgba(255, 255, 255, .1);
-      border-radius: 14px;
-      background: rgba(24, 33, 45, .94);
-      box-shadow: var(--shadow), inset 0 1px rgba(255, 255, 255, .045);
-    }
-    .brand { gap: 13px; }
-    .brand-mark {
-      position: relative;
-      width: 44px;
-      height: 44px;
-      border: 1px solid rgba(255, 255, 255, .28);
-      border-radius: 12px;
-      background: var(--coral);
-      box-shadow: 0 10px 24px rgba(233, 133, 104, .2);
-    }
-    .brand-mark::after { position: absolute; inset: 7px; border: 1px solid rgba(255, 255, 255, .44); border-radius: 7px; content: ""; }
-    .brand-name { color: var(--ink); font-size: 20px; font-weight: 750; letter-spacing: .01em; }
-    .brand-caption { color: var(--muted); font-size: 13px; }
-    .auth-tabs { margin: 34px 0 25px; padding: 4px; border: 1px solid var(--border); border-radius: 10px; background: #111923; }
-    .auth-tab { min-height: 40px; border-radius: 7px; color: var(--muted); transition: color .16s ease, background .16s ease, box-shadow .16s ease; }
-    .auth-tab:hover { color: var(--ink); }
-    .auth-tab.active { color: var(--ink); background: #273342; box-shadow: none; }
-    .form-title { font-size: 25px; letter-spacing: .01em; }
-    .form-caption { color: var(--muted); }
-    .field { gap: 8px; margin-top: 18px; }
-    .field label, .room-form label { color: #cbd4df; font-weight: 650; }
-    .field input, .room-form input, .search-input, .message-input {
-      border-color: var(--border);
-      color: var(--ink);
-      background: #111923;
-      transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
-    }
-    .field input:hover, .room-form input:hover, .search-input:hover, .message-input:hover { border-color: #45566a; }
-    .field input:focus, .room-form input:focus, .search-input:focus, .message-input:focus { border-color: var(--coral); box-shadow: 0 0 0 3px rgba(233, 133, 104, .14); }
-    .field-hint { color: var(--muted); }
-    .primary-button, .secondary-button { min-height: 44px; border-radius: 8px; transition: transform .16s ease, color .16s ease, background .16s ease, border-color .16s ease; }
-    .primary-button { border-color: var(--coral); color: #161a20; background: var(--coral); }
-    .primary-button:hover { background: var(--blue-dark); }
-    .primary-button:active, .secondary-button:active, .icon-button:active, .send-button:active { transform: translateY(1px) scale(.98); }
-    .secondary-button { border-color: #425266; color: var(--ink); background: transparent; }
-    .secondary-button:hover { border-color: #64778e; background: #24303f; }
-    .form-message { font-size: 13px; }
-
-    .app-shell { min-height: 100dvh; padding: 24px; background: #10161f; }
-    .chat-app {
-      width: min(1280px, 100%);
-      height: min(860px, calc(100dvh - 48px));
-      min-height: 600px;
-      grid-template-columns: 318px minmax(0, 1fr);
-      border-color: #293647;
-      border-radius: 14px;
-      background: var(--panel);
-      box-shadow: var(--shadow), inset 0 1px rgba(255, 255, 255, .035);
-    }
-    .sidebar { border-color: #293647; background: #141c27; }
-    .sidebar-brand { padding: 22px 20px 14px; }
-    .sidebar-brand .brand-mark { width: 34px; height: 34px; border-radius: 9px; font-size: 16px; }
-    .sidebar-brand .brand-mark::after { inset: 5px; border-radius: 5px; }
-    .sidebar-top { padding: 14px 18px 16px; }
-    .sidebar-title { color: var(--ink); font-size: 15px; letter-spacing: .01em; }
-    .room-count { color: #f2aa95; background: #3c2a2b; }
-    .search-icon { color: #8b9aab; }
-    .search-input { min-height: 42px; border-radius: 8px; }
-    .icon-button {
-      border-color: #354456;
-      border-radius: 8px;
-      color: #ced7e1;
-      background: #1d2835;
-      transition: transform .16s ease, background .16s ease, border-color .16s ease;
-    }
-    .icon-button:hover { border-color: #5a6c80; color: #fff; background: #263443; }
-    .room-list { padding: 5px 12px 16px; }
-    .room-item { position: relative; gap: 12px; margin: 2px 0; padding: 11px 10px; border-radius: 9px; color: #dce4ed; transition: background .16s ease, color .16s ease; }
-    .room-item:hover { background: #1d2835; }
-    .room-item.active { color: #fff; background: #263443; }
-    .room-item.active::before { position: absolute; width: 3px; height: 22px; left: 0; border-radius: 0 3px 3px 0; background: var(--coral); content: ""; }
-    .room-icon { border-radius: 9px; color: #b7c4d1; background: #263443; }
-    .room-item.active .room-icon { color: #1a2028; background: var(--coral); }
-    .room-meta { color: #8798ab; }
-    .room-item.active .room-meta { color: #b1bfce; }
-    .room-unread { min-width: 20px; height: 20px; display: grid; place-items: center; margin-left: auto; padding: 0 6px; border-radius: 10px; color: #171b22; background: var(--coral); font-size: 11px; font-weight: 800; font-variant-numeric: tabular-nums; }
-    .empty-state strong { color: var(--ink); }
-    .sidebar-footer { border-color: #293647; background: #111923; }
-    .avatar { color: #17202a; background: #aab8c7; }
-    .user-name { color: #e7edf4; }
-    .user-state, .logout-button { color: #8394a7; }
-    .logout-button:hover { color: #ff9b91; }
-
-    .main-chat { background: #18212d; }
-    .chat-header { min-height: 80px; padding: 16px 26px; border-color: #293647; background: #18212d; }
-    .current-room-icon { border: 1px solid rgba(233, 133, 104, .22); border-radius: 9px; color: #f1a48d; background: #31292d; }
-    .room-heading h1 { color: var(--ink); font-size: 19px; letter-spacing: .01em; }
-    .room-heading p { color: #8999aa; }
-    .connection-state { color: #96a5b5; }
-    .status-dot { box-shadow: 0 0 0 3px rgba(169, 183, 197, .12); }
-    .status-dot.online { background: var(--green); box-shadow: 0 0 0 3px rgba(108, 196, 148, .12); }
-    .status-dot.connecting { background: var(--yellow); box-shadow: 0 0 0 3px rgba(232, 187, 104, .12); }
-    .status-dot.offline { background: var(--red); box-shadow: 0 0 0 3px rgba(255, 113, 113, .12); }
-    .retry-button { color: #f2a28a; }
-    .message-list { padding: 30px clamp(20px, 4.4vw, 58px); }
-    .room-welcome { gap: 9px; color: #95a4b4; }
-    .room-welcome-mark { width: 52px; height: 52px; border: 1px solid rgba(233, 133, 104, .2); border-radius: 14px; color: #f1a48d; background: #31292d; }
-    .room-welcome strong { color: #e8eef5; }
-    .message-row { margin-bottom: 22px; }
-    .message-avatar { background: #b7c3d0; }
-    .message-meta { color: #8495a8; }
-    .message-state { color: #a6b4c3; }
-    .message-state.failed { color: #ff9b91; }
-    .message-retry { margin: 0 0 0 3px; padding: 0; border: 0; color: #ff9b91; background: transparent; font-size: 11px; font-weight: 700; }
-    .message-retry:hover { color: #ffd1ca; text-decoration: underline; }
-    .message-bubble { border-color: #304052; border-radius: 10px; color: #e8eef5; background: #202c3a; box-shadow: none; }
-    .message-row.me .message-bubble { border-color: var(--coral); color: #171b22; background: var(--coral); }
-    .message-row.me.sending .message-bubble { opacity: .72; }
-    .message-row.me.failed .message-bubble { border-color: #f38d85; color: #ffe7e3; background: #3b292c; }
-    .system-message { border: 1px solid #324052; border-radius: 7px; color: #9cabb9; background: #1d2835; }
-    .loading-stack { display: grid; gap: 10px; padding: 6px 2px; }
-    .room-skeleton, .message-skeleton { overflow: hidden; position: relative; border-radius: 9px; background: #202c3a; }
-    .room-skeleton { height: 60px; }
-    .message-skeleton { width: min(68%, 410px); height: 74px; }
-    .message-skeleton:nth-child(2) { justify-self: end; width: min(52%, 310px); height: 58px; }
-    .message-skeleton::after, .room-skeleton::after { position: absolute; inset: 0; content: ""; background: linear-gradient(100deg, transparent 25%, rgba(255, 255, 255, .055) 45%, transparent 65%); transform: translateX(-100%); animation: loading-shimmer 1.45s ease-in-out infinite; }
-    @keyframes loading-shimmer { to { transform: translateX(100%); } }
-    .composer { padding: 15px 26px 19px; border-color: #293647; background: #18212d; }
-    .message-input { min-height: 46px; border-radius: 9px; background: #111923; }
-    .message-input:focus { border-color: var(--coral); box-shadow: 0 0 0 3px rgba(233, 133, 104, .14); }
-    .send-button { border-color: var(--coral); border-radius: 9px; color: #161a20; background: var(--coral); transition: transform .16s ease, background .16s ease; }
-    .send-button:hover { background: var(--blue-dark); }
-    .send-button:disabled { border-color: #354456; color: #7a8998; background: #263443; }
-    .composer-foot { color: #7d8d9e; }
-    .toast-region { right: 24px; bottom: 24px; }
-    .toast { border-color: #354456; border-left-color: var(--coral); border-radius: 9px; color: #e8eef5; background: #202c3a; box-shadow: 0 18px 38px rgba(0, 0, 0, .26); }
-    .toast.error { border-left-color: var(--red); }
-    .toast.success { border-left-color: var(--green); }
-    dialog { border-color: #3a4a5d; border-radius: 12px; color: var(--ink); background: #18212d; box-shadow: var(--shadow); }
-    dialog::backdrop { background: rgba(4, 8, 13, .68); backdrop-filter: blur(3px); }
-    .dialog-close { color: #98a7b7; }
-    .dialog-close:hover { color: var(--ink); }
-
-    @media (max-width: 760px) {
-      .auth-shell { padding: 16px; }
-      .auth-shell::before { inset: 12px; }
-      .auth-panel { padding: 30px 24px; }
-      .app-shell { padding: 0; }
-      .chat-app { height: 100dvh; min-height: 0; border: 0; border-radius: 0; }
-      .sidebar { width: min(88vw, 330px); border-right: 1px solid #2c3948; box-shadow: 16px 0 46px rgba(0, 0, 0, .35); }
-      .mobile-scrim { background: rgba(4, 8, 13, .62); backdrop-filter: blur(2px); }
-      .chat-header { padding: 12px 16px; }
-      .message-list { padding: 22px 16px; }
-      .composer { padding: 12px 16px 16px; }
-    }
-    @media (max-width: 420px) {
-      .auth-shell::before, .auth-shell::after { display: none; }
-      .auth-panel { border: 1px solid rgba(255, 255, 255, .08); }
-      .connection-state { padding-left: 4px; }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
-    }
-  </style>
+  <link rel="icon" href="/assets/icons/messages-square.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/fonts/fonts.css">
+  <link rel="stylesheet" href="/chat.css">
 </head>
 <body>
   <section class="auth-shell" id="auth-view" aria-labelledby="auth-title">
     <div class="auth-panel">
-      <div class="brand"><div class="brand-mark" aria-hidden="true">C</div><div><div class="brand-name">澄语协作</div><div class="brand-caption">面向团队的实时沟通平台</div></div></div>
-      <div class="auth-tabs" role="tablist" aria-label="账户操作"><button class="auth-tab active" id="login-tab" type="button" role="tab" aria-selected="true">登录</button><button class="auth-tab" id="register-tab" type="button" role="tab" aria-selected="false">注册</button></div>
-      <form id="auth-form" novalidate><h1 class="form-title" id="auth-title">欢迎回来</h1><p class="form-caption" id="auth-caption">登录后开始加入房间聊天</p><div class="field"><label for="username">用户名</label><input id="username" name="username" type="text" autocomplete="username" maxlength="64" placeholder="3-64 位字母、数字、_ 或 -" required></div><div class="field"><label for="password">密码</label><input id="password" name="password" type="password" autocomplete="current-password" maxlength="128" placeholder="至少 8 位" required><div class="field-hint">密码仅用于登录，不会显示在消息中。</div></div><div class="form-message" id="auth-message" role="status" aria-live="polite"></div><button class="primary-button auth-submit" id="auth-submit" type="submit">登录</button></form>
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"><span class="icon icon-brand"></span></div>
+        <span class="brand-name">澄语协作</span>
+      </div>
+      <div class="auth-heading"><h1 id="auth-title">欢迎回来</h1><p id="auth-caption">登录你的账户</p></div>
+      <div class="auth-tabs" role="tablist" aria-label="账户操作">
+        <button class="auth-tab active" id="login-tab" type="button" role="tab" aria-selected="true">登录</button>
+        <button class="auth-tab" id="register-tab" type="button" role="tab" aria-selected="false">注册</button>
+      </div>
+      <form id="auth-form" novalidate>
+        <div class="field"><label for="username">用户名</label><input id="username" name="username" type="text" autocomplete="username" maxlength="64" placeholder="输入用户名" required></div>
+        <div class="field"><label for="password">密码</label><div class="password-field"><input id="password" name="password" type="password" autocomplete="current-password" maxlength="128" placeholder="输入密码" required><button class="icon-button password-toggle" id="password-toggle" type="button" title="显示密码" aria-label="显示密码" aria-pressed="false"><span class="icon icon-eye" aria-hidden="true"></span></button></div></div>
+        <div class="form-message" id="auth-message" role="status" aria-live="polite"></div>
+        <button class="primary-button auth-submit" id="auth-submit" type="submit">登录</button>
+      </form>
     </div>
   </section>
 
   <section class="app-shell" id="app-view" hidden>
     <div class="chat-app">
-      <aside class="sidebar" id="sidebar" aria-label="房间列表"><div class="sidebar-brand"><div class="brand-mark" aria-hidden="true">C</div><div><div class="brand-name">澄语协作</div><div class="brand-caption">实时沟通平台</div></div></div><div class="sidebar-top"><div class="sidebar-heading"><div class="sidebar-title-group"><div class="sidebar-title">房间</div><span class="room-count" id="room-count">0</span></div><div class="sidebar-actions"><button class="icon-button" id="join-room-button" type="button" title="通过 ID 加入房间" aria-label="通过 ID 加入房间">#</button><button class="icon-button" id="create-room-button" type="button" title="创建房间" aria-label="创建房间">+</button></div></div><label class="search-wrap"><span class="search-icon" aria-hidden="true">⌕</span><span class="sr-only">搜索房间</span><input class="search-input" id="room-search" type="search" placeholder="搜索房间" autocomplete="off"></label></div><div class="room-list" id="room-list" aria-live="polite"></div><div class="sidebar-footer"><div class="avatar" id="user-avatar">?</div><div class="user-copy"><div class="user-name" id="user-name">未登录</div><div class="user-state" id="user-state">未连接</div></div><button class="logout-button" id="logout-button" type="button">退出</button></div></aside>
+      <aside class="sidebar" id="sidebar" aria-label="房间列表">
+        <div class="sidebar-brand"><div class="brand-mark" aria-hidden="true"><span class="icon icon-brand"></span></div><span class="brand-name">澄语协作</span><button class="icon-button mobile-sidebar-close" id="close-sidebar-button" type="button" title="关闭房间列表" aria-label="关闭房间列表"><span class="icon icon-x" aria-hidden="true"></span></button></div>
+        <div class="sidebar-top">
+          <div class="sidebar-heading"><div class="sidebar-title-group"><h2 class="sidebar-title">我的房间</h2><span class="room-count" id="room-count">0</span></div><div class="sidebar-actions"><button class="icon-button" id="join-room-button" type="button" title="通过 ID 加入房间" aria-label="通过 ID 加入房间"><span class="icon icon-hash" aria-hidden="true"></span></button><button class="icon-button create-room-button" id="create-room-button" type="button" title="创建房间" aria-label="创建房间"><span class="icon icon-plus" aria-hidden="true"></span></button></div></div>
+          <label class="search-wrap"><span class="icon icon-search" aria-hidden="true"></span><span class="sr-only">搜索房间</span><input class="search-input" id="room-search" type="search" placeholder="搜索房间" autocomplete="off"></label>
+          <div class="room-filters" role="tablist" aria-label="筛选房间"><button class="room-filter active" id="all-rooms-filter" type="button" role="tab" aria-selected="true">全部</button><button class="room-filter" id="unread-rooms-filter" type="button" role="tab" aria-selected="false" tabindex="-1">未读<span id="unread-room-count" hidden>0</span></button></div>
+        </div>
+        <div class="room-list" id="room-list" aria-live="polite"></div>
+        <div class="sidebar-footer"><div class="avatar user-avatar" id="user-avatar">?</div><div class="user-copy"><div class="user-name" id="user-name">未登录</div><div class="user-state"><span class="user-presence" aria-hidden="true"></span><span id="user-state">未连接</span></div></div><button class="icon-button logout-button" id="logout-button" type="button" title="退出登录" aria-label="退出登录"><span class="icon icon-logout" aria-hidden="true"></span></button></div>
+      </aside>
       <div class="mobile-scrim" id="mobile-scrim" hidden></div>
-      <main class="main-chat"><header class="chat-header"><button class="icon-button mobile-menu" id="mobile-menu" type="button" title="打开房间列表" aria-label="打开房间列表">☰</button><div class="room-heading"><div class="room-title-line"><span class="current-room-icon" id="current-room-icon">?</span><h1 id="current-room-name">选择一个房间</h1></div><p id="current-room-meta">房间消息会实时同步</p></div><div class="chat-actions"><button class="icon-button" id="leave-room-button" type="button" title="退出当前房间" aria-label="退出当前房间">×</button><div class="connection-state" aria-live="polite"><span class="status-dot offline" id="status-dot"></span><span id="status-text">未连接</span><button class="retry-button" id="retry-button" type="button" hidden>重试</button></div></div></header><section class="message-list" id="message-list" aria-live="polite" aria-label="聊天消息"></section><form class="composer" id="composer"><div class="composer-row"><label class="sr-only" for="message-input">消息内容</label><textarea class="message-input" id="message-input" rows="1" maxlength="4096" placeholder="选择房间后输入消息"></textarea><button class="send-button" id="send-button" type="submit" title="发送消息" aria-label="发送消息">→</button></div><div class="composer-foot"><span>Enter 发送，Shift + Enter 换行</span><span class="char-count" id="char-count">0 / 4096</span></div></form></main>
+      <main class="main-chat">
+        <header class="chat-header">
+          <button class="icon-button mobile-menu" id="mobile-menu" type="button" title="打开房间列表" aria-label="打开房间列表" aria-controls="sidebar" aria-expanded="false"><span class="icon icon-panel" aria-hidden="true"></span></button>
+          <div class="room-heading"><span class="current-room-icon" id="current-room-icon">?</span><div class="room-heading-copy"><h1 id="current-room-name">选择一个房间</h1><p id="current-room-meta"></p></div></div>
+          <div class="chat-actions"><div class="connection-state" aria-live="polite"><span class="status-dot offline" id="status-dot"></span><span id="status-text">未连接</span><button class="icon-button retry-button" id="retry-button" type="button" title="重新连接" aria-label="重新连接" hidden><span class="icon icon-retry" aria-hidden="true"></span></button></div><span class="toolbar-divider" aria-hidden="true"></span><button class="icon-button" id="copy-room-button" type="button" title="复制房间 ID" aria-label="复制房间 ID"><span class="icon icon-copy" aria-hidden="true"></span></button><button class="icon-button leave-room-button" id="leave-room-button" type="button" title="退出当前房间" aria-label="退出当前房间"><span class="icon icon-logout" aria-hidden="true"></span></button></div>
+        </header>
+        <section class="message-list" id="message-list" aria-live="polite" aria-label="聊天消息"></section>
+        <div class="latest-message-wrap"><button class="latest-message-button" id="latest-message-button" type="button" hidden><span class="icon icon-down" aria-hidden="true"></span>回到最新消息</button></div>
+        <form class="composer" id="composer">
+          <div class="composer-row"><label class="sr-only" for="message-input">消息内容</label><textarea class="message-input" id="message-input" rows="1" maxlength="4096" placeholder="选择房间后输入消息"></textarea><button class="send-button" id="send-button" type="submit" title="发送消息" aria-label="发送消息"><span class="icon icon-send" aria-hidden="true"></span></button></div>
+          <div class="composer-foot"><span class="composer-context"><span class="icon icon-hash" aria-hidden="true"></span><span class="composer-room" id="composer-room"></span></span><span class="char-count" id="char-count">0 / 4096 B</span></div>
+        </form>
+      </main>
     </div>
   </section>
 
-  <dialog id="room-dialog" aria-labelledby="room-dialog-title"><div class="dialog-body"><div class="dialog-header"><h2 id="room-dialog-title">创建房间</h2><button class="dialog-close" id="close-room-dialog" type="button" aria-label="关闭">×</button></div><form class="room-form" id="room-form" novalidate><label for="room-name-input">房间名称</label><input id="room-name-input" type="text" maxlength="128" placeholder="例如：周末读书会" required><div class="form-message" id="room-message" role="status" aria-live="polite"></div><div class="room-form-actions"><button class="secondary-button" id="cancel-room-button" type="button">取消</button><button class="primary-button" id="room-submit" type="submit">创建</button></div></form></div></dialog>
-  <dialog id="join-room-dialog" aria-labelledby="join-room-dialog-title"><div class="dialog-body"><div class="dialog-header"><h2 id="join-room-dialog-title">加入房间</h2><button class="dialog-close" id="close-join-room-dialog" type="button" aria-label="关闭">×</button></div><form class="room-form" id="join-room-form" novalidate><label for="join-room-id-input">房间 ID</label><input id="join-room-id-input" type="text" maxlength="128" placeholder="输入房间 ID" required><div class="form-message" id="join-room-message" role="status" aria-live="polite"></div><div class="room-form-actions"><button class="secondary-button" id="cancel-join-room-button" type="button">取消</button><button class="primary-button" id="join-room-submit" type="submit">加入</button></div></form></div></dialog>
+  <dialog id="room-dialog" aria-labelledby="room-dialog-title"><div class="dialog-body"><div class="dialog-header"><div class="dialog-symbol"><span class="icon icon-plus" aria-hidden="true"></span></div><button class="icon-button dialog-close" id="close-room-dialog" type="button" title="关闭" aria-label="关闭"><span class="icon icon-x" aria-hidden="true"></span></button></div><h2 id="room-dialog-title">创建房间</h2><form class="room-form" id="room-form" novalidate><label for="room-name-input">房间名称</label><input id="room-name-input" type="text" maxlength="128" placeholder="例如：产品讨论" required><div class="form-message" id="room-message" role="status" aria-live="polite"></div><div class="room-form-actions"><button class="secondary-button" id="cancel-room-button" type="button">取消</button><button class="primary-button" id="room-submit" type="submit">创建房间</button></div></form></div></dialog>
+  <dialog id="join-room-dialog" aria-labelledby="join-room-dialog-title"><div class="dialog-body"><div class="dialog-header"><div class="dialog-symbol"><span class="icon icon-hash" aria-hidden="true"></span></div><button class="icon-button dialog-close" id="close-join-room-dialog" type="button" title="关闭" aria-label="关闭"><span class="icon icon-x" aria-hidden="true"></span></button></div><h2 id="join-room-dialog-title">加入房间</h2><form class="room-form" id="join-room-form" novalidate><label for="join-room-id-input">房间 ID</label><input id="join-room-id-input" type="text" maxlength="128" placeholder="输入房间 ID" required><div class="form-message" id="join-room-message" role="status" aria-live="polite"></div><div class="room-form-actions"><button class="secondary-button" id="cancel-join-room-button" type="button">取消</button><button class="primary-button" id="join-room-submit" type="submit">加入房间</button></div></form></div></dialog>
   <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
 
-  <script>
-  (() => {
-    "use strict";
-    const MAX_MESSAGE_LENGTH=4096,MAX_CACHED_MESSAGES=1000;
-    const keys={token:"linya.token",username:"linya.username",room:"linya.room"};
-    const state={token:localStorage.getItem(keys.token)||"",username:localStorage.getItem(keys.username)||"",currentRoomId:localStorage.getItem(keys.room)||"",rooms:[],messages:new Map(),unread:new Map(),pending:new Map(),roomsLoading:false,messagesLoading:false,ws:null,reconnectTimer:null,reconnectDelay:1000,shouldReconnect:true,authMode:"login"};
-    const $=id=>document.getElementById(id), authView=$("auth-view"), appView=$("app-view"), authForm=$("auth-form"), authMessage=$("auth-message"), authSubmit=$("auth-submit"), usernameInput=$("username"), passwordInput=$("password"), roomList=$("room-list"), messageList=$("message-list"), messageInput=$("message-input"), sendButton=$("send-button"), charCount=$("char-count"), roomDialog=$("room-dialog"), roomForm=$("room-form"), roomNameInput=$("room-name-input"), roomMessage=$("room-message"), joinRoomDialog=$("join-room-dialog"), joinRoomForm=$("join-room-form"), joinRoomIdInput=$("join-room-id-input"), joinRoomMessage=$("join-room-message");
-    class ApiError extends Error{constructor(message,status,code=""){super(message);this.status=status;this.code=code}}
-    const text=(value)=>String(value==null?"":value);
-    const identifier=()=>globalThis.crypto&&crypto.randomUUID?crypto.randomUUID():`${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const initials=(value)=>{const valueText=text(value).trim();return valueText?valueText.slice(0,1).toUpperCase():"?"};
-    function setText(element,value){element.textContent=text(value)}
-    function formMessage(element,message,success=false){setText(element,message);element.classList.toggle("success",success)}
-    function toast(message,type="info"){const node=document.createElement("div");node.className=`toast ${type}`;node.setAttribute("role",type==="error"?"alert":"status");setText(node,message);$("toast-region").appendChild(node);setTimeout(()=>node.remove(),4200)}
-    function errorText(error,fallback){return error instanceof ApiError&&error.message?error.message:fallback}
-    function renderSkeletons(target,className,count){const stack=document.createElement("div");stack.className="loading-stack";for(let index=0;index<count;index+=1){const item=document.createElement("div");item.className=className;stack.appendChild(item)}target.appendChild(stack)}
-    function updatePageTitle(){const total=[...state.unread.values()].reduce((sum,count)=>sum+count,0);document.title=total?`（${total>99?"99+":total}）澄语协作 | 实时沟通平台`:"澄语协作 | 实时沟通平台"}
-    async function api(path,options={}){const headers=new Headers(options.headers||{});if(options.body&&!headers.has("Content-Type"))headers.set("Content-Type","application/json");if(state.token)headers.set("Authorization",`Bearer ${state.token}`);const response=await fetch(path,{...options,headers}),raw=await response.text();let data={};try{data=raw?JSON.parse(raw):{}}catch(_){data={msg:raw}}if(!response.ok)throw new ApiError(data.error?.message||data.msg||`请求失败（${response.status}）`,response.status,data.error?.code||"");return data}
-    function validate(username,password){if(!/^[A-Za-z0-9_-]{3,64}$/.test(username))return"用户名需为 3-64 位字母、数字、_ 或 -";if(password.length<8||password.length>128)return"密码长度需为 8-128 位";return""}
-    function setAuthMode(mode){state.authMode=mode;const login=mode==="login";$("login-tab").classList.toggle("active",login);$("register-tab").classList.toggle("active",!login);$("login-tab").setAttribute("aria-selected",String(login));$("register-tab").setAttribute("aria-selected",String(!login));setText($("auth-title"),login?"欢迎回来":"创建账户");setText($("auth-caption"),login?"登录后开始加入房间聊天":"注册后即可创建房间并发送消息");setText(authSubmit,login?"登录":"注册");passwordInput.autocomplete=login?"current-password":"new-password";formMessage(authMessage,"")}
-    function authBusy(busy){authSubmit.disabled=busy;usernameInput.disabled=busy;passwordInput.disabled=busy;setText(authSubmit,busy?"处理中…":state.authMode==="login"?"登录":"注册")}
-    function saveSession(username,token){state.username=username;state.token=token;localStorage.setItem(keys.username,username);localStorage.setItem(keys.token,token)}
-    function clearSession(){state.token="";state.username="";state.currentRoomId="";localStorage.removeItem(keys.token);localStorage.removeItem(keys.username);localStorage.removeItem(keys.room)}
-    async function submitAuth(event){event.preventDefault();const username=usernameInput.value.trim(),password=passwordInput.value,validation=validate(username,password);if(validation){formMessage(authMessage,validation);return}authBusy(true);try{const endpoint=state.authMode==="login"?"/login":"/register",data=await api(endpoint,{method:"POST",body:JSON.stringify({username,password})});if(state.authMode==="register"){setAuthMode("login");formMessage(authMessage,"注册成功，请使用新账户登录。",true);passwordInput.value="";passwordInput.focus();return}if(!data.token)throw new ApiError("服务器未返回登录令牌",500);saveSession(username,data.token);await enterChat()}catch(error){if(error.status===401)formMessage(authMessage,"用户名或密码错误");else if(error.status===503)formMessage(authMessage,"认证服务暂不可用，请确认数据库和 JWT 已配置");else formMessage(authMessage,errorText(error,"请求失败，请稍后重试"))}finally{authBusy(false)}}
-    async function enterChat(){state.shouldReconnect=true;authView.hidden=true;appView.hidden=false;setText($("user-name"),state.username);setText($("user-avatar"),initials(state.username));updateConnection("connecting");try{await fetchRooms();connectWebSocket()}catch(error){if(error.status===401){clearSession();showAuth("登录已失效，请重新登录");return}toast(errorText(error,"房间列表加载失败"),"error");updateConnection("offline")}}
-    function showAuth(message=""){state.shouldReconnect=false;clearTimeout(state.reconnectTimer);if(state.ws){state.ws.close();state.ws=null}authView.hidden=false;appView.hidden=true;formMessage(authMessage,message);usernameInput.focus()}
-    async function fetchRooms(){state.roomsLoading=true;renderRooms();try{let data=await api("/api/v1/rooms");state.rooms=Array.isArray(data.data?.rooms)?data.data.rooms.map(room=>({id:text(room.id),name:text(room.name||"未命名房间")})):[];if(!state.rooms.length){await api("/api/v1/rooms",{method:"POST",body:JSON.stringify({name:"综合大厅"})});data=await api("/api/v1/rooms");state.rooms=Array.isArray(data.data?.rooms)?data.data.rooms.map(room=>({id:text(room.id),name:text(room.name||"未命名房间")})):[]}if(!state.rooms.some(room=>room.id===state.currentRoomId))state.currentRoomId=state.rooms[0]?state.rooms[0].id:"";if(state.currentRoomId)localStorage.setItem(keys.room,state.currentRoomId)}finally{state.roomsLoading=false;renderRooms();renderCurrentRoom()}if(state.currentRoomId)await loadHistory(state.currentRoomId)}
-    function renderRooms(){setText($("room-count"),state.rooms.length);roomList.setAttribute("aria-busy",String(state.roomsLoading));const query=$("room-search").value.trim().toLowerCase();roomList.replaceChildren();if(state.roomsLoading){renderSkeletons(roomList,"room-skeleton",5);return}const rooms=state.rooms.filter(room=>room.name.toLowerCase().includes(query));if(!rooms.length){const empty=document.createElement("div"),strong=document.createElement("strong"),hint=document.createElement("span");empty.className="empty-state";setText(strong,query?"没有匹配的房间":"还没有房间");setText(hint,query?"换一个关键词试试":"点击右上角 + 创建第一个房间");empty.append(strong,hint);roomList.appendChild(empty);updatePageTitle();return}rooms.forEach(room=>{const button=document.createElement("button"),icon=document.createElement("span"),copy=document.createElement("span"),name=document.createElement("span"),meta=document.createElement("span"),unread=document.createElement("span"),count=state.unread.get(room.id)||0;button.className=`room-item ${room.id===state.currentRoomId?"active":""}`;button.type="button";button.addEventListener("click",()=>switchRoom(room.id));icon.className="room-icon";setText(icon,initials(room.name));copy.className="room-copy";name.className="room-name";meta.className="room-meta";setText(name,room.name);setText(meta,`房间 ID ${room.id}`);copy.append(name,meta);button.append(icon,copy);if(count){unread.className="room-unread";unread.setAttribute("aria-label",`${count} 条未读消息`);setText(unread,count>99?"99+":count);button.appendChild(unread)}roomList.appendChild(button)});updatePageTitle()}
-    function renderCurrentRoom(){const room=state.rooms.find(item=>item.id===state.currentRoomId);setText($("current-room-icon"),room?initials(room.name):"?");setText($("current-room-name"),room?room.name:"选择一个房间");setText($("current-room-meta"),room?`房间 ID ${room.id} · 消息实时同步`:"创建或选择一个房间开始聊天");$("leave-room-button").disabled=!room;renderMessages();updateComposer()}
-    async function switchRoom(roomId){const room=state.rooms.find(item=>item.id===text(roomId));if(!room)return;state.currentRoomId=room.id;state.unread.delete(room.id);localStorage.setItem(keys.room,room.id);renderRooms();renderCurrentRoom();await loadHistory(room.id);subscribeRoom(room.id);toggleMobile(false)}
-    function remember(roomId,message){if(!state.messages.has(roomId))state.messages.set(roomId,[]);const list=state.messages.get(roomId),existing=list.find(item=>item.id===message.id||(message.sender===state.username&&item.sender===state.username&&message.clientMessageId&&item.clientMessageId===message.clientMessageId));if(existing){Object.assign(existing,message);return{message:existing,inserted:false}}list.push(message);list.sort((left,right)=>{const leftId=Number(left.id),rightId=Number(right.id);return Number.isFinite(leftId)&&Number.isFinite(rightId)?leftId-rightId:left.time-right.time});if(list.length>MAX_CACHED_MESSAGES)list.splice(0,list.length-MAX_CACHED_MESSAGES);return{message,inserted:true}}
-    function addMessage(roomId,content,kind,sender,options={}){if(!roomId||!content)return null;const remembered=remember(roomId,{id:options.id||identifier(),clientMessageId:options.clientMessageId||"",content:text(content),kind,sender:sender||(kind==="me"?state.username:"成员"),status:options.status||"",time:options.time?new Date(options.time):new Date()});if(remembered.inserted&&kind==="other"&&roomId!==state.currentRoomId)state.unread.set(roomId,(state.unread.get(roomId)||0)+1);if(roomId===state.currentRoomId)renderMessages();else renderRooms();return remembered.message}
-    function mergeServerMessage(item){const roomId=text(item.roomId),remembered=remember(roomId,{id:text(item.messageId),clientMessageId:text(item.clientMessageId),content:text(item.content),kind:item.senderId===state.username?"me":"other",sender:text(item.senderId),status:"sent",time:new Date(item.createdAt)});if(remembered.inserted&&remembered.message.kind==="other"&&roomId!==state.currentRoomId)state.unread.set(roomId,(state.unread.get(roomId)||0)+1);if(roomId===state.currentRoomId)renderMessages();else renderRooms();return remembered.message}
-    async function loadHistory(roomId){state.messagesLoading=true;renderMessages();try{let after="0";for(;;){const data=await api(`/api/v1/rooms/${encodeURIComponent(roomId)}/messages?after=${encodeURIComponent(after)}&limit=100`),items=Array.isArray(data.data?.messages)?data.data.messages:[];items.forEach(mergeServerMessage);const next=text(data.data?.nextAfter);if(!next||next===after)break;after=next}}catch(error){toast(errorText(error,"历史消息加载失败"),"error")}finally{state.messagesLoading=false;renderMessages()}}
-    function findMessage(roomId,messageId){return(state.messages.get(roomId)||[]).find(message=>message.id===messageId)}
-    function updateMessageStatus(roomId,messageId,status){const message=findMessage(roomId,messageId);if(!message)return;message.status=status;if(roomId===state.currentRoomId)renderMessages()}
-    function renderMessages(){messageList.replaceChildren();messageList.setAttribute("aria-busy",String(state.messagesLoading));if(state.messagesLoading){renderSkeletons(messageList,"message-skeleton",3);return}const room=state.rooms.find(item=>item.id===state.currentRoomId);if(!room){const welcome=document.createElement("div");welcome.className="room-welcome";setText(welcome,"登录后创建或选择一个房间");messageList.appendChild(welcome);return}const messages=state.messages.get(room.id)||[];if(!messages.length){const welcome=document.createElement("div"),mark=document.createElement("div"),title=document.createElement("strong"),hint=document.createElement("span");welcome.className="room-welcome";mark.className="room-welcome-mark";setText(mark,initials(room.name));setText(title,room.name);setText(hint,"发送第一条消息，开始这段对话");welcome.append(mark,title,hint);messageList.appendChild(welcome);return}messages.forEach(message=>{if(message.kind==="system"){const node=document.createElement("div");node.className="system-message";setText(node,message.content);messageList.appendChild(node);return}const mine=message.kind==="me",row=document.createElement("div"),avatar=document.createElement("div"),stack=document.createElement("div"),meta=document.createElement("div"),sender=document.createElement("span"),time=document.createElement("time"),bubble=document.createElement("div");row.className=`message-row ${mine?"me":"other"}${message.status?` ${message.status}`:""}`;avatar.className="avatar message-avatar";stack.className="message-stack";meta.className="message-meta";bubble.className="message-bubble";setText(avatar,initials(message.sender));setText(sender,message.sender);time.dateTime=message.time.toISOString();setText(time,message.time.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}));setText(bubble,message.content);meta.append(sender,time);if(mine&&message.status){const status=document.createElement("span");status.className=`message-state ${message.status}`;setText(status,{sending:"发送中",sent:"已发出",failed:"发送失败"}[message.status]||"");meta.appendChild(status);if(message.status==="failed"){const retry=document.createElement("button");retry.className="message-retry";retry.type="button";setText(retry,"重试");retry.addEventListener("click",()=>retryMessage(room.id,message.id));meta.appendChild(retry)}}stack.append(meta,bubble);row.append(avatar,stack);messageList.appendChild(row)});messageList.scrollTop=messageList.scrollHeight}
-    function updateConnection(mode){$("status-dot").className=`status-dot ${mode}`;setText($("status-text"),{online:"已连接",connecting:"连接中",offline:"已离线"}[mode]||"未连接");$("retry-button").hidden=mode!=="offline";setText($("user-state"),{online:"在线",connecting:"连接中",offline:"离线"}[mode]||"未连接");updateComposer()}
-    function updateComposer(){const online=state.ws&&state.ws.readyState===WebSocket.OPEN,hasRoom=Boolean(state.currentRoomId),length=messageInput.value.length;sendButton.disabled=!online||!hasRoom||length===0||length>MAX_MESSAGE_LENGTH;messageInput.disabled=!hasRoom;messageInput.placeholder=!hasRoom?"选择房间后输入消息":!online?"连接恢复后即可发送消息":"输入消息…";setText(charCount,`${length} / ${MAX_MESSAGE_LENGTH}`);charCount.classList.toggle("warning",length>MAX_MESSAGE_LENGTH*.9&&length<=MAX_MESSAGE_LENGTH);charCount.classList.toggle("invalid",length>MAX_MESSAGE_LENGTH)}
-    function connectWebSocket(){if(!state.token||(state.ws&&[WebSocket.OPEN,WebSocket.CONNECTING].includes(state.ws.readyState)))return;clearTimeout(state.reconnectTimer);updateConnection("connecting");const protocol=location.protocol==="https:"?"wss":"ws",socket=new WebSocket(`${protocol}://${location.host}/ws?token=${encodeURIComponent(state.token)}`);state.ws=socket;socket.addEventListener("open",()=>{if(state.ws!==socket)return;state.reconnectDelay=1000;updateConnection("online");subscribeRoom(state.currentRoomId);resumePending(state.currentRoomId)});socket.addEventListener("message",event=>handleSocket(event.data));socket.addEventListener("error",()=>updateConnection("connecting"));socket.addEventListener("close",event=>{if(state.ws===socket)state.ws=null;for(const pending of state.pending.values()){clearTimeout(pending.timer);updateMessageStatus(pending.roomId,pending.messageId,"sending")}updateConnection("offline");if(state.shouldReconnect&&state.token){clearTimeout(state.reconnectTimer);state.reconnectTimer=setTimeout(connectWebSocket,state.reconnectDelay);state.reconnectDelay=Math.min(state.reconnectDelay*2,30000)}if(event.code===1008||event.code===1003)toast("实时连接被服务器拒绝，请重新登录","error")})}
-    function subscribeRoom(roomId){if(roomId&&state.ws&&state.ws.readyState===WebSocket.OPEN){const requestId=identifier();state.ws.send(JSON.stringify({version:1,type:"room.subscribe",requestId,payload:{roomId:text(roomId)}}))}}
-    function handleSocket(raw){let data;try{data=JSON.parse(raw)}catch(_){addMessage(state.currentRoomId,raw,"system","系统");return}if(data.version!==1)return;if(data.type==="message.created"&&data.payload?.message){mergeServerMessage(data.payload.message);return}if(data.type==="message.ack"&&data.payload){const clientMessageId=text(data.payload.clientMessageId),pending=state.pending.get(clientMessageId);if(!pending)return;clearTimeout(pending.timer);state.pending.delete(clientMessageId);const message=findMessage(pending.roomId,pending.messageId);if(message){message.id=text(data.payload.messageId);message.status="sent";message.time=new Date(data.payload.createdAt);renderMessages()}return}if(data.type==="error"){const code=data.error?.code||"unknown",pending=[...state.pending.values()].find(item=>item.requestId===data.requestId);if(pending){clearTimeout(pending.timer);if(code==="dependency_unavailable")scheduleRetry(pending);else{state.pending.delete(pending.clientMessageId);updateMessageStatus(pending.roomId,pending.messageId,"failed")}}if(code!=="dependency_unavailable"){const messages={room_not_found:"房间不存在或已被关闭",room_membership_required:"请先加入当前房间",invalid_content:"消息内容无效"};addMessage(state.currentRoomId,messages[code]||data.error?.message||"服务器拒绝了这条操作","system","系统")}}}
-    function scheduleRetry(pending){clearTimeout(pending.timer);if(pending.attempt>=4){state.pending.delete(pending.clientMessageId);updateMessageStatus(pending.roomId,pending.messageId,"failed");toast("消息确认超时，请手动重试","error");return}const delay=Math.min(1000*2**pending.attempt,8000);pending.timer=setTimeout(()=>dispatchMessage(pending.roomId,pending.messageId),delay)}
-    function dispatchMessage(roomId,messageId){const message=findMessage(roomId,messageId);if(!message)return;const clientMessageId=message.clientMessageId||message.id;let pending=state.pending.get(clientMessageId);if(!pending){pending={clientMessageId,roomId,messageId,attempt:0,requestId:"",timer:null};state.pending.set(clientMessageId,pending)}const socket=state.ws;if(!socket||socket.readyState!==WebSocket.OPEN){updateMessageStatus(roomId,messageId,"sending");return}pending.attempt+=1;pending.requestId=identifier();updateMessageStatus(roomId,messageId,"sending");try{socket.send(JSON.stringify({version:1,type:"message.send",requestId:pending.requestId,payload:{roomId:text(roomId),clientMessageId,content:message.content}}));pending.timer=setTimeout(()=>scheduleRetry(pending),5000)}catch(_){scheduleRetry(pending)}}
-    function resumePending(roomId){for(const pending of state.pending.values())if(pending.roomId===roomId)dispatchMessage(pending.roomId,pending.messageId)}
-    function retryMessage(roomId,messageId){dispatchMessage(roomId,messageId)}
-    function sendMessage(event){event.preventDefault();const content=messageInput.value.trim();if(!content||content.length>MAX_MESSAGE_LENGTH||!state.currentRoomId||!state.ws||state.ws.readyState!==WebSocket.OPEN)return;const clientMessageId=identifier(),message=addMessage(state.currentRoomId,content,"me",state.username,{id:clientMessageId,clientMessageId,status:"sending"});messageInput.value="";resizeInput();updateComposer();messageInput.focus();if(message)dispatchMessage(state.currentRoomId,message.id)}
-    async function createRoom(event){event.preventDefault();const name=roomNameInput.value.trim();if(!name||new TextEncoder().encode(name).length>128){formMessage(roomMessage,"房间名称需为 1-128 字节");return}$("room-submit").disabled=true;formMessage(roomMessage,"");try{const data=await api("/api/v1/rooms",{method:"POST",body:JSON.stringify({name})}),roomId=text(data.data?.room?.id);await fetchRooms();if(roomId)await switchRoom(roomId);roomDialog.close();roomNameInput.value="";toast("房间创建成功","success")}catch(error){formMessage(roomMessage,errorText(error,"房间创建失败"))}finally{$("room-submit").disabled=false}}
-    async function joinRoomById(event){event.preventDefault();const roomId=joinRoomIdInput.value.trim();if(!roomId||new TextEncoder().encode(roomId).length>128){formMessage(joinRoomMessage,"请输入有效的房间 ID");return}$("join-room-submit").disabled=true;formMessage(joinRoomMessage,"");try{await api(`/api/v1/rooms/${encodeURIComponent(roomId)}/members`,{method:"POST"});await fetchRooms();await switchRoom(roomId);joinRoomDialog.close();joinRoomIdInput.value="";toast("已加入房间","success")}catch(error){formMessage(joinRoomMessage,errorText(error,"加入房间失败"))}finally{$("join-room-submit").disabled=false}}
-    async function leaveCurrentRoom(){const roomId=state.currentRoomId;if(!roomId)return;try{await api(`/api/v1/rooms/${encodeURIComponent(roomId)}/members/me`,{method:"DELETE"});state.messages.delete(roomId);state.currentRoomId="";localStorage.removeItem(keys.room);await fetchRooms();toast("已退出房间","success")}catch(error){toast(error.code==="room_owner_cannot_leave"?"房主暂时不能退出房间":errorText(error,"退出房间失败"),"error")}}
-    function resizeInput(){messageInput.style.height="auto";messageInput.style.height=`${Math.min(messageInput.scrollHeight,132)}px`}
-    function toggleMobile(open){$("sidebar").classList.toggle("open",open);$("mobile-scrim").hidden=!open}
-    function logout(){state.shouldReconnect=false;clearTimeout(state.reconnectTimer);if(state.ws)state.ws.close(1000,"logout");state.ws=null;for(const pending of state.pending.values())clearTimeout(pending.timer);clearSession();state.rooms=[];state.messages.clear();state.unread.clear();state.pending.clear();updatePageTitle();usernameInput.value="";passwordInput.value="";setAuthMode("login");showAuth("你已退出登录")}
-    async function resume(){if(!state.token||!state.username){showAuth();return}authView.hidden=true;appView.hidden=false;setText($("user-name"),state.username);setText($("user-avatar"),initials(state.username));updateConnection("connecting");try{await fetchRooms();connectWebSocket()}catch(error){if(error.status===401){clearSession();showAuth("登录已失效，请重新登录")}else{toast(errorText(error,"会话恢复失败"),"error");updateConnection("offline")}}}
-    $("login-tab").addEventListener("click",()=>setAuthMode("login"));$("register-tab").addEventListener("click",()=>setAuthMode("register"));authForm.addEventListener("submit",submitAuth);$("room-search").addEventListener("input",renderRooms);$("create-room-button").addEventListener("click",()=>{formMessage(roomMessage,"");roomNameInput.value="";roomDialog.showModal();roomNameInput.focus()});$("join-room-button").addEventListener("click",()=>{formMessage(joinRoomMessage,"");joinRoomIdInput.value="";joinRoomDialog.showModal();joinRoomIdInput.focus()});$("close-room-dialog").addEventListener("click",()=>roomDialog.close());$("cancel-room-button").addEventListener("click",()=>roomDialog.close());$("close-join-room-dialog").addEventListener("click",()=>joinRoomDialog.close());$("cancel-join-room-button").addEventListener("click",()=>joinRoomDialog.close());roomForm.addEventListener("submit",createRoom);joinRoomForm.addEventListener("submit",joinRoomById);$("leave-room-button").addEventListener("click",leaveCurrentRoom);$("logout-button").addEventListener("click",logout);$("retry-button").addEventListener("click",connectWebSocket);$("mobile-menu").addEventListener("click",()=>toggleMobile(true));$("mobile-scrim").addEventListener("click",()=>toggleMobile(false));$("composer").addEventListener("submit",sendMessage);messageInput.addEventListener("input",()=>{resizeInput();updateComposer()});messageInput.addEventListener("keydown",event=>{if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();$("composer").requestSubmit()}});window.addEventListener("beforeunload",()=>{state.shouldReconnect=false;clearTimeout(state.reconnectTimer)});setAuthMode("login");updateComposer();resume();
-  })();
-  </script>
+  <script src="/chat.js" defer></script>
 </body>
 </html>

@@ -2,7 +2,7 @@
 
 ## 状态
 
-当前版本冻结房间、成员、内存消息历史和 WebSocket v1 协议。消息当前只保存在进程内；MySQL 持久化与重启恢复在 M3 验收。
+当前版本冻结房间、成员、消息历史和 WebSocket v1 协议。生产配置使用 MySQL 持久化用户、房间、成员、消息与 Outbox；内存 Repository 仅用于单元测试和显式本地 fixture。
 
 ## 通用约定
 
@@ -163,13 +163,13 @@ GET /api/v1/rooms/{roomId}/messages?after=20000010&limit=100
 
 ## WebSocket v1
 
-连接仍使用：
+脚本客户端可以在握手中使用 `Authorization: Bearer <JWT>`。浏览器原生 WebSocket 不能设置该请求头，因此页面使用：
 
-```text
-/ws?token=<JWT>
+```javascript
+new WebSocket("wss://chat.example.com/ws", ["httpserver.v1", `bearer.${token}`])
 ```
 
-握手成功后，JWT `sub` 会绑定到稳定 session ID。客户端先订阅已经通过 HTTP 加入的房间：
+服务端校验 JWT 后只选择并回显 `httpserver.v1`，不会回显 bearer 子协议。公网入口拒绝 URL query token；`/ws?token=<JWT>` 只保留给 localhost 旧测试兼容。握手成功后，JWT `sub` 会绑定到稳定 session ID。客户端先订阅已经通过 HTTP 加入的房间：
 
 ```json
 {

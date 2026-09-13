@@ -204,7 +204,7 @@ def connect_websocket(port, token):
     )
     sock.sendall(request.encode("ascii"))
     handshake = recv_until(sock, b"\r\n\r\n")
-    assert b"101 Switching Protocols" in handshake
+    assert b"101 Switching Protocols" in handshake, handshake.decode("iso-8859-1", "replace")
     assert b"Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=" in handshake
     return sock
 

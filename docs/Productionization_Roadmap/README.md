@@ -89,10 +89,10 @@ MySQL 是用户、房间、成员关系和聊天消息的真相源。Redis 只�
 
 ## 7. 当前实施进度
 
-更新时间：2026-09-06。
+更新时间：2026-09-12。逐项命令、结果和未完成项见 [验收状态与证据索引](Acceptance_Status.md) 与 [本轮复验记录](Acceptance_2026-09-12.md)。
 
-- M1 已完成：领域对象与 Repository 接口、内存实现、线程安全应用服务、HTTP API v1、消息 ID 游标历史、WebSocket v1 envelope、前端迁移和业务 E2E 均已落地。
-- M2 已完成：原子 `AppendOrGet` 幂等路径、ACK 可靠边界、同键重试不重复广播、`after` 增量恢复、客户端有限指数退避，以及并发/断线 E2E 已落地；语义详见 [消息交付语义](../Message_Delivery_Semantics.md)。
-- M1/M2/M3 边界：当前历史和幂等记录仅在进程生命周期内有效；进程重启恢复、MySQL 事务提交和唯一约束裁决等待 M3 持久化验收。
-- 兼容策略：旧 `/room/*` 和旧 WebSocket `join/chat` 暂时保留，旧 `join` 会自动加入业务房间；新客户端只使用 v1 接口。
-- 当前验证：Debug 与 ASan/UBSan 全量测试均为 26/26，TSan 领域/协议测试 2/2，浏览器加载无脚本错误。
+- M1-M8 的本地目标与自动化验收已完成：MySQL 是持久化真相源，Redis 提供缓存、限流、在线状态和跨实例通知，Transactional Outbox 保证提交后的事件可重试发布。
+- M9 的生产 Compose、HTTPS/WSS 双实例入口、监控栈和真实 Docker 失败发布回滚已在隔离环境通过；迁移幂等与 13 项部署回归通过。真实域名、受信任证书、空白云主机和实际 Actions/registry 发布仍待目标环境验收。
+- M10 的 Debug 与 ASan/UBSan 均为 44/44，TSan 隔离测试通过；100/500/1000 fanout、多房间、1000 条断线恢复和资源采样已完成短时验证。
+- 30 分钟三轮对照与 24 小时长稳尚未执行，因此路线图整体不标记为最终完成，也不在简历中预写稳定容量或在线时长。
+- 兼容策略不变：旧 `/room/*` 和旧 WebSocket `join/chat` 暂时保留，新客户端使用 v1 API 与 envelope。

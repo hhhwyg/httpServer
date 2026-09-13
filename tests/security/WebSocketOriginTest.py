@@ -14,18 +14,24 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "integration"))
 from WebSocketSmokeTest import make_token, recv_until, wait_for_server  # noqa: E402
 
 
-def handshake(port, token, origin=None):
+def handshake(port, token, origin=None, use_subprotocol=False):
     with socket.create_connection(("127.0.0.1", port), timeout=3) as sock:
         sock.settimeout(3)
         headers = "" if origin is None else f"Origin: {origin}\r\n"
+        authorization = "" if use_subprotocol else f"Authorization: Bearer {token}\r\n"
+        subprotocol = (
+            f"Sec-WebSocket-Protocol: httpserver.v1, bearer.{token}\r\n"
+            if use_subprotocol else ""
+        )
         request = (
             "GET /ws HTTP/1.1\r\n"
             "Host: localhost\r\n"
-            f"Authorization: Bearer {token}\r\n"
+            f"{authorization}"
             "Upgrade: websocket\r\n"
             "Connection: Upgrade\r\n"
             "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
             "Sec-WebSocket-Version: 13\r\n"
+            f"{subprotocol}"
             f"{headers}\r\n"
         )
         sock.sendall(request.encode("ascii"))
@@ -57,7 +63,13 @@ def main():
         assert b"101 Switching Protocols" in handshake(
             port, token, "https://chat.example.test"
         )
-        print("websocket_origin_acceptance missing=403 untrusted=403 trusted=101")
+        browser_protocol = handshake(
+            port, token, "https://chat.example.test", use_subprotocol=True
+        )
+        assert b"101 Switching Protocols" in browser_protocol, browser_protocol
+        assert b"Sec-WebSocket-Protocol: httpserver.v1" in browser_protocol
+        assert token.encode() not in browser_protocol
+        print("websocket_origin_acceptance missing=403 untrusted=403 trusted=101 browser_protocol=101")
     finally:
         process.terminate()
         try:

@@ -2,13 +2,13 @@
 
 ## 握手
 
-连接地址为：
+公网连接地址为：
 
 ```text
-ws://127.0.0.1:8088/ws?token=<JWT>
+wss://chat.example.com/ws
 ```
 
-服务端要求 `Upgrade: websocket`、`Connection: Upgrade`、`Sec-WebSocket-Key` 和 `Sec-WebSocket-Version: 13`。JWT 在升级前校验，失败返回 `401`，不会切换到 WebSocket 状态。
+服务端要求 `Upgrade: websocket`、`Connection: Upgrade`、`Sec-WebSocket-Key` 和 `Sec-WebSocket-Version: 13`。命令行客户端通过 `Authorization: Bearer <JWT>` 认证；浏览器使用 `Sec-WebSocket-Protocol: httpserver.v1, bearer.<JWT>`，服务端只回显 `httpserver.v1`。JWT 在升级前校验，失败返回 `401`，不会切换到 WebSocket 状态。公网 Nginx 拒绝 query token，本地直连的 query 方式仅作为旧测试兼容。
 
 ## 帧边界
 

@@ -17,10 +17,13 @@ jobs:
       - name: Check productionization source formatting
         run: >-
           clang-format --dry-run --Werror
+          include/httpserver/application/AuthenticationRateLimiter.h
+          src/application/AuthenticationRateLimiter.cpp
           src/application/OutboxPublisher.cpp
           src/application/ChatService.cpp
           src/redis/RedisClient.cpp
           src/sql/MySqlChatRepository.cpp
+          tests/application/AuthenticationRateLimiterTest.cpp
       - name: Configure warnings-as-errors build
         run: cmake --preset debug -DBUILD_TESTING=OFF -DHTTPSERVER_WARNINGS_AS_ERRORS=ON
       - name: Build warnings-as-errors target
@@ -28,6 +31,7 @@ jobs:
       - name: Analyze dependency and persistence paths
         run: >-
           clang-tidy -p build/debug
+          src/application/AuthenticationRateLimiter.cpp
           src/application/OutboxPublisher.cpp
           src/application/ChatService.cpp
           src/redis/RedisClient.cpp
@@ -48,12 +52,41 @@ jobs:
         run: cmake --build --preset debug --parallel
       - name: Test unit and socket suites
         run: ctest --preset debug -LE 'redis|database'
+      - name: Test benchmark correctness and deployment recovery
+        env:
+          HTTPSERVER_BENCH_TEST_SERVER: ${{ github.workspace }}/build/debug/WebServer
+        run: |
+          python3 -B tests/benchmark/BenchmarkClientTest.py
+          python3 -B tests/deployment/DeployReleaseTest.py
       - name: Configure ASan and UBSan
         run: cmake --preset asan
       - name: Build ASan and UBSan
         run: cmake --build --preset asan --parallel
       - name: Test ASan and UBSan
         run: ctest --preset asan -LE 'redis|database'
+
+  browser-interactions:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install isolated browser test dependencies
+        run: |
+          npm install --prefix "$RUNNER_TEMP/httpserver-ui" --no-save --package-lock=false playwright@1.62.1
+          node "$RUNNER_TEMP/httpserver-ui/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Test desktop and mobile chat recovery
+        env:
+          NODE_PATH: ${{ runner.temp }}/httpserver-ui/node_modules
+          HTTPSERVER_UI_ARTIFACTS: ${{ runner.temp }}/httpserver-ui/screenshots
+        run: node tests/ui/ChatInteractionTest.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-interactions
+          path: ${{ runner.temp }}/httpserver-ui/screenshots
 
   dependency-integration:
     runs-on: ubuntu-24.04

@@ -9,7 +9,7 @@
 | 边界 | 控制 | 日志与限制 |
 | --- | --- | --- |
 | Internet -> Nginx | 80 仅跳转 HTTPS；443 只允许 TLS 1.2/1.3；请求、header、连接和速率限制 | Nginx 生成 request ID；不得记录 Authorization、Cookie 或 URL token |
-| Nginx -> WebServer | Compose 内网 `webserver:8088`，不发布宿主机端口；Nginx 代理 Upgrade | `/ws` 只接受配置的 HTTPS Origin，拒绝 query token |
+| Nginx -> WebServer | Compose 内网 `webserver:8088`，不发布宿主机端口；Nginx 代理 Upgrade 与子协议头 | `/ws` 只接受配置的 HTTPS Origin，拒绝 query token，不回显 bearer 子协议 |
 | WebServer -> MySQL/Redis | 仅 Compose 内网，环境 secret，prepared statement 与 Redis argv API | 不记录密码、JWT、消息正文、数据库口令 |
 | 运维人员 -> server | SSH 密钥与来源限制；secret 文件权限 600；证书目录不入 Git | 变更、备份、恢复按 Runbook 留记录 |
 
@@ -20,7 +20,7 @@
 | 凭据猜测和账号枚举 | scrypt 随机盐、统一登录错误、Redis 用户/IP 窗口限流及 Nginx 限流 | `security.authentication_abuse`、Redis 双实例限流测试 |
 | JWT 伪造、算法降级、重放 | HS256 白名单、issuer/iat/exp/max-length 校验、随机 `jti`；logout denylist 以剩余 TTL 写 Redis | `util.crypto`、Redis token-revocation 场景 |
 | 房间对象越权 | 每个 HTTP 路由和 WebSocket subscribe/message 都查成员关系 | `security.authorization_matrix` 与聊天 E2E |
-| 跨站 WebSocket 劫持 | Nginx 和应用双重 Origin 白名单，WSS，禁止公开入口 query token | `security.websocket_origin` |
+| 跨站 WebSocket 劫持或凭据泄露 | Nginx 和应用双重 Origin 白名单，WSS，禁止公开入口 query token，浏览器 bearer 子协议不回显 | `security.websocket_origin`、公网 WSS smoke |
 | 输入耗尽/协议异常 | URI/header/body/frame/JSON 字段上限、mask/RSV/control-frame 校验、输出背压 | HTTP/WS 协议测试、慢消费者和 sanitizer |
 | 注入 | MySQL prepared statement，Redis `redisCommandArgv`，静态路径 canonicalization | SQL/Redis 特殊字符、路径穿越测试 |
 | 供应链与 secret 泄露 | secret/镜像不入 Git，gitleaks 与 Trivy 阻断发布 | 安全工作流与 release scan artifact |

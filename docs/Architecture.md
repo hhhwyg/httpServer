@@ -1,5 +1,11 @@
 # Architecture
 
+For a detailed, code-verified Chinese guide to the current working tree, including
+startup, threads, module internals, cross-instance message flows and interview
+preparation, see [Interview Architecture](Interview_Architecture/README.md).
+That guide distinguishes implementation facts, existing test evidence and known
+limitations; the dependency overview below is intentionally shorter.
+
 The current migration follows this dependency direction:
 
 ```text

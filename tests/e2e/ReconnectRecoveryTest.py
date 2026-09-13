@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify a disconnected room member recovers 250 messages using after cursors."""
+"""Verify a disconnected room member recovers a configurable history window."""
 
 import os
 from pathlib import Path
@@ -24,6 +24,8 @@ from WebSocketSmokeTest import connect_websocket, wait_for_server  # noqa: E402
 
 
 def run_flow(port):
+    message_count = int(os.environ.get("HTTPSERVER_RECOVERY_MESSAGE_COUNT", "250"))
+    assert message_count > 0
     alice_token = register_and_login(port, "m2-recovery-alice")
     bob_token = register_and_login(port, "m2-recovery-bob")
     status, response = request_json(
@@ -44,7 +46,7 @@ def run_flow(port):
         subscribe(sender, room_id, "sender-subscribe")
 
         acknowledged_ids = []
-        for index in range(250):
+        for index in range(message_count):
             send_json(
                 sender,
                 {
@@ -86,9 +88,10 @@ def run_flow(port):
             after = next_after
 
         recovered_ids = [item["messageId"] for item in recovered]
-        assert pages == 3
+        expected_pages = (message_count + 99) // 100
+        assert pages == expected_pages
         assert recovered_ids == acknowledged_ids
-        assert len(set(recovered_ids)) == 250
+        assert len(set(recovered_ids)) == message_count
         assert all(
             int(recovered_ids[index]) + 1 == int(recovered_ids[index + 1])
             for index in range(len(recovered_ids) - 1)
@@ -96,7 +99,9 @@ def run_flow(port):
         print(
             "reconnect_recovery_acceptance "
             f"pages={pages} persisted_message_records={len(recovered_ids)} "
-            f"receiver_messages={len(recovered_ids)} message_ids={recovered_ids}"
+            f"receiver_messages={len(recovered_ids)} "
+            f"first_message_id={recovered_ids[0]} last_message_id={recovered_ids[-1]} "
+            "duplicates=0 missing=0 out_of_order=0"
         )
     finally:
         sender.close()
