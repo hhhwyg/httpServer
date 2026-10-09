@@ -2,8 +2,6 @@
 
 一个基于 C++17、Linux Socket、`io_uring` 和多线程事件循环实现的轻量级 HTTP/WebSocket 服务器。项目包含静态文件服务、JSON 登录注册接口、JWT 鉴权、WebSocket 聊天原型以及异步日志组件。
 
-> 当前项目处于学习和持续重构阶段，主要面向 Linux 环境。聊天室和 MySQL 功能需要额外完成数据库初始化及接口联调，不建议直接用于生产环境。
-
 ## 功能特性
 
 - 基于 TCP Socket 的 HTTP/1.0、HTTP/1.1 请求处理。
